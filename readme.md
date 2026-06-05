@@ -16,6 +16,132 @@ Built with real sensor data from [OpenAQ](https://openaq.org/) across **478 Indi
 
 > **Why R² = 0.71 is honest:** Most Kaggle notebooks show 0.95+ using random `train_test_split` on time-series data — that's data leakage. Our model uses chronological split with lagged-only features, meaning no future information leaks into training.
 
+## 🏛️ Architecture
+
+```mermaid
+flowchart TB
+    subgraph Sources["📡 Data Sources"]
+        OAQ["🌫️ OpenAQ API\n478 Indian Stations"]
+        NASA["🛰️ NASA POWER\nSatellite Weather"]
+        FIRMS["🔥 NASA FIRMS\nFire Detection"]
+    end
+
+    subgraph ETL["⚙️ ETL Pipeline"]
+        direction TB
+        RAW[("raw_measurements\n7.7M rows")]
+        CLEAN[("clean_measurements\n7.5M rows")]
+        FEAT[("daily_features\n57K rows")]
+        
+        RAW -->|"5-Phase Cleaning\n• NaN removal\n• Placeholder detection\n• Negative filtering\n• Outlier capping\n• Dtype conversion"| CLEAN
+        CLEAN -->|"Feature Engineering\n• Lag features\n• Time features\n• Cross-pollutant"| FEAT
+    end
+
+    subgraph Weather["🌧️ Weather Fusion"]
+        TEMP["Temperature\nHumidity\nWind Speed"]
+        EXTRA["Precipitation\nWind Direction"]
+        FIRE["Regional Fire Count\n100km radius"]
+    end
+
+    subgraph ML["🧠 ML Model"]
+        GB["GradientBoosting\n200 trees, depth 6"]
+        EVAL["Evaluation\nChrono Split\nTrain ≤2025 | Test 2026"]
+        RESULT["R² = 0.71\nMAE = 17 µg/m³"]
+        GB --> EVAL --> RESULT
+    end
+
+    OAQ -->|"REST API"| RAW
+    NASA -->|"Daily Point API"| TEMP & EXTRA
+    FIRMS -->|"VIIRS Archive"| FIRE
+    
+    TEMP --> FEAT
+    EXTRA --> FEAT
+    FIRE --> FEAT
+    FEAT --> GB
+
+    style Sources fill:#1a1a2e,stroke:#e94560,color:#fff
+    style ETL fill:#16213e,stroke:#0f3460,color:#fff
+    style Weather fill:#1a1a2e,stroke:#e94560,color:#fff
+    style ML fill:#0f3460,stroke:#53bf9d,color:#fff
+    style RESULT fill:#53bf9d,stroke:#53bf9d,color:#000
+```
+
+## 📐 Data Model
+
+```mermaid
+erDiagram
+    stations ||--o{ raw_measurements : "has"
+    stations ||--o{ clean_measurements : "has"
+    stations ||--o{ daily_features : "has"
+    stations ||--o{ predictions : "has"
+    model_registry ||--o{ predictions : "generates"
+
+    stations {
+        serial id PK
+        int openaq_id UK
+        text name
+        text city
+        text state
+        float latitude
+        float longitude
+        bool is_active
+    }
+
+    raw_measurements {
+        bigserial id PK
+        int station_id FK
+        text parameter
+        float value
+        text unit
+        timestamptz datetime_utc
+    }
+
+    clean_measurements {
+        bigserial id PK
+        int station_id FK
+        text parameter
+        float value
+        text[] cleaning_flags
+        bool is_valid
+    }
+
+    daily_features {
+        date date PK
+        int station_id PK_FK
+        text parameter PK
+        float value
+        smallint month
+        smallint day_of_year
+        float lag_1
+        float lag_7
+        float temperature
+        float humidity
+        float wind_speed
+        float no2_value
+    }
+
+    predictions {
+        bigserial id PK
+        date date
+        int station_id FK
+        text parameter
+        smallint horizon_days
+        float predicted_value
+        text naqi_category
+        text model_version
+    }
+
+    model_registry {
+        serial id PK
+        text model_name
+        text version
+        float mae
+        float rmse
+        float r2
+        text artifact_path
+        bool is_active
+    }
+```
+
 ## 🏗️ Project Structure
 
 ```
