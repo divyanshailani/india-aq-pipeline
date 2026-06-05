@@ -1,71 +1,89 @@
-# 🇮🇳 India Air Quality — EDA & Prediction Pipeline
+# 🇮🇳 IndiaAQ Intelligence — Air Quality Prediction Pipeline
 
-End-to-end data pipeline for Indian air quality analysis: **API ingestion → 5-phase cleaning → EDA → feature engineering → ML prediction.**
+End-to-end ML pipeline for Indian air quality prediction: **API ingestion → PostgreSQL ETL → multi-source weather fusion → ML model.**
 
-Built with real sensor data from [OpenAQ](https://openaq.org/) across 10 Indian monitoring stations (2015–2025).
+Built with real sensor data from [OpenAQ](https://openaq.org/) across **478 Indian monitoring stations** (2021–2026), fused with **NASA satellite weather** and **FIRMS fire detection** data.
 
-## 📊 Key Findings
+## 🧠 Model Performance
 
-| Insight | Detail |
-|---|---|
-| Most polluted station | Income Tax Delhi (~225 µg/m³ avg PM2.5) |
-| Cleanest station | Collectorate Gaya (~35 µg/m³) |
-| Peak pollution hour | 8–10 AM (temperature inversion traps pollutants) |
-| Cleanest hour | 3–5 PM (solar heating disperses pollution) |
-| Station correlation | Delhi ↔ Mumbai = 0.97 (same weather systems) |
-| Statistical anomalies | 331 readings beyond 3σ (>332 µg/m³) |
+| Metric | Value | Notes |
+|---|---|---|
+| **R²** | **0.71** | Chronological split, production-safe |
+| **MAE** | 17.0 µg/m³ | Mean prediction error |
+| **RMSE** | 32.0 µg/m³ | Root mean squared error |
+| **Architecture** | GradientBoosting | 200 trees, depth 6 |
+| **Test method** | Train ≤2025, Test 2026 | No data leakage |
+
+> **Why R² = 0.71 is honest:** Most Kaggle notebooks show 0.95+ using random `train_test_split` on time-series data — that's data leakage. Our model uses chronological split with lagged-only features, meaning no future information leaks into training.
 
 ## 🏗️ Project Structure
 
 ```
 pow-eda-pipeline/
 ├── data/
-│   ├── raw/                    # Original API data (gitignored)
-│   └── processed/              # Cleaned data (gitignored)
+│   ├── raw/                           # Raw API data (gitignored)
+│   ├── fire_counts_firms.csv          # Processed fire counts per station
+│   ├── weather_nasa_power.csv         # NASA POWER: temp, humidity, wind
+│   └── weather_nasa_power_extra.csv   # NASA POWER: precipitation, wind dir
+├── models/
+│   ├── gb_pm25_v3_nasa_weather.pkl    # Best model (v3 + NASA weather)
+│   └── gradient_boosting_pm25_model.pkl
 ├── notebooks/
-│   ├── 01_indian_aq_clean.ipynb    # 5-phase data cleaning
-│   ├── 02_eda.ipynb                # Exploratory data analysis
-│   └── 03_feature_engineering.ipynb # Feature engineering for ML
+│   ├── 01_indian_aq_clean.ipynb       # 5-phase data cleaning
+│   ├── 02_eda.ipynb                   # Exploratory data analysis
+│   ├── 03_feature_engineering.ipynb   # Feature engineering pipeline
+│   ├── 04-eda_full_scale.py           # Full-scale EDA (478 stations)
+│   └── 05_ml_model_clean.ipynb        # ML model training & evaluation
 ├── scripts/
-│   └── fetch_openaq_india.py   # OpenAQ API data ingestion
+│   ├── fetch_openaq_india.py          # OpenAQ API ingestion
+│   ├── ingest_openaq.py               # Bulk data loader
+│   ├── run_daily_etl.py               # Orchestrator: clean → features
+│   ├── fetch_nasa_power.py            # NASA POWER weather (temp/hum/wind)
+│   ├── fetch_nasa_power_extra.py      # NASA POWER (precip/wind direction)
+│   ├── update_db_nasa_weather.py      # Push NASA weather into PostgreSQL
+│   ├── fetch_firms_fire.py            # NASA FIRMS fire API fetcher
+│   └── process_firms_fire.py          # Fire points → regional counts
+├── sql/
+│   └── schema.sql                     # PostgreSQL schema
 ├── src/
-│   ├── aggregations.py         # Data aggregation utilities
-│   └── process_aq.py           # Processing functions
+│   ├── cleaning.py                    # Data cleaning module
+│   └── features.py                    # Feature engineering module
 ├── tests/
-│   └── test_processing.py      # Unit tests
-├── .gitignore
+│   └── test_processing.py
 └── readme.md
 ```
 
-## 🧹 Cleaning Pipeline
+## 📡 Data Sources
 
-```
-Raw data:          105,265 rows × 8 columns
-Phase 1 — NaN:      -1,100 rows (dropna on missing sensor readings)
-Phase 2 — Placeholders: -5 rows (999.99 sentinel values)
-Phase 3 — Negatives: -996 rows (-52°C stuck sensor in Gurugram)
-Phase 4 — Outliers:  -692 rows (per-parameter domain thresholds)
-Phase 5 — Dtypes:       0 rows (datetime conversion)
-────────────────────────────────────────
-Clean data:        102,472 rows (97.35% retained)
-```
+| Source | Data | Coverage | Nulls |
+|---|---|---|---|
+| **OpenAQ API** | PM2.5, PM10, NO₂, CO, O₃, SO₂ | 478 stations, 2021-2026 | ~5% |
+| **NASA POWER** | Temperature, Humidity, Wind Speed | Satellite, global | **0.15%** |
+| **NASA POWER** | Precipitation, Wind Direction | Satellite, global | **0.15%** |
+| **NASA FIRMS** | Active fire detections (VIIRS) | India, 2021-2026 | 0% |
 
-## 🛠️ Feature Engineering
+## 🔧 Feature Engineering
 
-| Feature Type | Features | Purpose |
+| Category | Features | Signal |
 |---|---|---|
-| Time | month, day_of_week, is_weekend | Seasonal & weekly patterns |
-| Lag | lag_1, lag_2, lag_3 | Temporal momentum (yesterday's PM2.5) |
-| Rolling | roll_3_mean, roll_7_mean, roll_3_std | Short-term trend & volatility |
+| **Lag** (safest) | lag_1, lag_2, lag_3, lag_7 | 83% of R² — PM2.5 is highly autocorrelated |
+| **Weather** (NASA) | temperature, humidity, wind_speed, precipitation, wind_direction | 8% — rain washes out PM2.5 |
+| **Temporal** | month, day_of_week, is_weekend, day_of_year | 3% — seasonal patterns |
+| **Spatial** | latitude, longitude | 2% — geographic clustering |
+| **Fire** (FIRMS) | fire_count_lag_1 | 0.4% — seasonal (Oct-Nov stubble burning) |
+| **Pollutants** (lagged) | lag_1_no2, lag_1_co, lag_1_o3, lag_1_so2 | 2% — co-pollutant correlation |
 
-## 🔧 Tech Stack
+> **Data Leakage Prevention:** Same-day pollutants (NO₂, CO) are NOT used — in production you won't have tomorrow's readings. Only lagged (yesterday's) values are used.
 
-- **Python 3.11+** — core language
-- **Pandas** — data manipulation & time-series operations
-- **Matplotlib / Seaborn** — visualization
-- **NumPy** — numerical operations
-- **scikit-learn** — ML models (upcoming)
-- **OpenAQ API** — data source
+## 🧹 ETL Pipeline
+
+```
+OpenAQ API → raw_measurements (7.7M rows)
+         → cleaning pipeline → clean_measurements (7.5M rows)
+         → feature engineering → daily_features (57K rows)
+         → NASA weather fusion → temperature/humidity/wind/precip
+         → FIRMS fire fusion → regional fire counts
+```
 
 ## 🚀 Setup
 
@@ -75,10 +93,22 @@ git clone https://github.com/divyanshailani/pow-eda-pipeline.git
 cd pow-eda-pipeline
 
 # Install dependencies
-pip install pandas numpy matplotlib seaborn scikit-learn requests
+pip install pandas numpy matplotlib seaborn scikit-learn psycopg2-binary requests joblib
+
+# PostgreSQL setup
+psql -U postgres -f sql/schema.sql
 
 # Run data ingestion
 python scripts/fetch_openaq_india.py
+python scripts/run_daily_etl.py
+
+# Fetch NASA weather
+python scripts/fetch_nasa_power.py
+python scripts/fetch_nasa_power_extra.py
+python scripts/update_db_nasa_weather.py
+
+# Process FIRMS fire data (download from NASA FIRMS first)
+python scripts/process_firms_fire.py
 
 # Open notebooks
 jupyter notebook notebooks/
@@ -86,14 +116,28 @@ jupyter notebook notebooks/
 
 ## 📈 Roadmap
 
-- [x] Data ingestion (OpenAQ API)
-- [x] 5-phase data cleaning
-- [x] Exploratory data analysis
-- [x] Feature engineering
-- [ ] ML model (Linear Regression + Random Forest)
-- [ ] PostgreSQL migration
+- [x] Data ingestion (OpenAQ API → PostgreSQL)
+- [x] 5-phase data cleaning pipeline
+- [x] Exploratory data analysis (478 stations)
+- [x] Feature engineering (time + lag + cross-parameter)
+- [x] NASA POWER satellite weather integration
+- [x] NASA FIRMS fire detection integration
+- [x] GradientBoosting model (R² = 0.71, production-safe)
+- [ ] LSTM/Transformer model (target R² > 0.85)
 - [ ] FastAPI prediction endpoint
+- [ ] Frontend dashboard
+
+## 🔬 Key Learnings
+
+1. **`train_test_split` is lying to you** — Random split on time-series = data leakage. Always use chronological split.
+2. **Same-day features = cheating** — Using today's NO₂ to predict today's PM2.5 is circular.
+3. **lag_1 dominates** — Yesterday's PM2.5 carries 76% of predictive signal. Air pollution is autocorrelated.
+4. **Satellite > ground stations** — NASA POWER (0.15% nulls) crushed Open-Meteo (63% nulls) for Indian coverage.
+5. **More features ≠ better model** — After lag features, returns diminish rapidly with tree-based models.
+6. **R² = 0.71 is honest** — Better than a "0.95 R²" model that can't survive production.
 
 ## 👤 Author
 
 **Divyansh Ailani** — [GitHub](https://github.com/divyanshailani)
+
+*Simulation Architect | First-Principles Engineering*

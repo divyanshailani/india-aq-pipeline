@@ -1,8 +1,16 @@
-# Data
+# Data (raw files are large, keep processed CSVs)
 data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+
+# Large data CSVs (regenerable via scripts)
+data/weather_nasa_power.csv
+data/weather_nasa_power_extra.csv
+data/fire_counts_firms.csv
+
+# Models (too large for git, regenerable)
+models/*.pkl
 
 # Python
 __pycache__/

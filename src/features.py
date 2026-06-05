@@ -190,8 +190,8 @@ def build_features_for_station(conn, station_id, target_param="pm25"):
     for feature_name, values in cross.items():
         features[feature_name] = values
 
-    # Drop warmup rows (NaN from lag/rolling)
-    features = features.dropna(subset=["value", "lag_7", "roll_7_mean"])
+    # Drop warmup rows — only require value and lag_1 (keep more rows)
+    features = features.dropna(subset=["value", "lag_1"])
 
     return features
 
@@ -220,9 +220,13 @@ def insert_features(conn, features_df):
             roll_3_mean = EXCLUDED.roll_3_mean,
             roll_7_mean = EXCLUDED.roll_7_mean,
             roll_3_std = EXCLUDED.roll_3_std,
-            temperature = EXCLUDED.temperature,
-            humidity = EXCLUDED.humidity,
-            wind_speed = EXCLUDED.wind_speed
+            temperature = COALESCE(EXCLUDED.temperature, daily_features.temperature),
+            humidity = COALESCE(EXCLUDED.humidity, daily_features.humidity),
+            wind_speed = COALESCE(EXCLUDED.wind_speed, daily_features.wind_speed),
+            no2_value = EXCLUDED.no2_value,
+            co_value = EXCLUDED.co_value,
+            o3_value = EXCLUDED.o3_value,
+            so2_value = EXCLUDED.so2_value
     """
 
     values = []
