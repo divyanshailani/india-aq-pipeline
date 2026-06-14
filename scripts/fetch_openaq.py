@@ -260,13 +260,15 @@ def clear_checkpoint(country_code):
 
 
 # ── Main ──────────────────────────────────────────────────
-def run_fetch(country_code, days=None, resume=False):
+def run_fetch(country_code, days=None, date_from=None, date_to=None, resume=False):
     """
     Main fetch function. Can be called from CLI or from orchestrator.
 
     Args:
         country_code: 'US', 'GB', 'CN', 'IN'
         days: fetch last N days (None = full backfill from 2021)
+        date_from: explicit start date string 'YYYY-MM-DD' (overrides days)
+        date_to: explicit end date string 'YYYY-MM-DD' (overrides days)
         resume: continue from checkpoint
 
     Returns:
@@ -278,15 +280,21 @@ def run_fetch(country_code, days=None, resume=False):
     country_name = COUNTRIES[country_code]["name"]
 
     now = datetime.now(timezone.utc)
-    date_to = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    if days:
-        date_from = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Priority: explicit dates > days > full backfill
+    if date_from and date_to:
+        dt_from = f"{date_from}T00:00:00Z"
+        dt_to = f"{date_to}T23:59:59Z"
+    elif days:
+        dt_to = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt_from = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     else:
-        date_from = f"{DATE_FROM}T00:00:00Z"
+        dt_to = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt_from = f"{DATE_FROM}T00:00:00Z"
 
     print(f"\n{'='*60}")
-    print(f"  {country_name} ({country_code}) — AQ Data Fetch")
-    print(f"  Date range: {date_from[:10]} to {date_to[:10]}")
+    print(f"  {country_name} ({country_code}) -- AQ Data Fetch")
+    print(f"  Date range: {dt_from[:10]} to {dt_to[:10]}")
     print(f"{'='*60}")
 
     headers = get_headers()
@@ -339,7 +347,7 @@ def run_fetch(country_code, days=None, resume=False):
             param = sensor["parameter"]["name"]
             unit = sensor["parameter"]["units"]
 
-            measurements = fetch_sensor_measurements(sensor_id, headers, date_from, date_to)
+            measurements = fetch_sensor_measurements(sensor_id, headers, dt_from, dt_to)
 
             if not measurements:
                 continue
