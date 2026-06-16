@@ -1,6 +1,5 @@
 """
-Multi-Country Daily Data Collector (with Chunked Backfill)
-============================================================
+Multi-country daily data collector with chunked backfill.
 Runs nightly via launchd. Does TWO things:
 
 1. INCREMENTAL: Fetch last 7 days for all countries (keep data fresh)
@@ -30,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from scripts.fetch_openaq import run_fetch, COUNTRIES
 
-# ── Paths ─────────────────────────────────────────────────
+# Paths
 LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "logs")
 LOG_FILE = os.path.join(LOG_DIR, "collection_log.json")
 BACKFILL_STATE_FILE = os.path.join(LOG_DIR, "backfill_state.json")
@@ -40,7 +39,7 @@ BACKFILL_START = "2021-01-01"
 BACKFILL_COUNTRIES = ["US", "GB", "AU"]
 
 
-# ── Logging ───────────────────────────────────────────────
+# Logging
 def load_log():
     if os.path.exists(LOG_FILE):
         with open(LOG_FILE, "r") as f:
@@ -54,7 +53,7 @@ def save_log(log):
         json.dump(log, f, indent=2, default=str)
 
 
-# ── Backfill State ────────────────────────────────────────
+# Backfill state
 def load_backfill_state():
     """Load backfill progress for each country."""
     if os.path.exists(BACKFILL_STATE_FILE):
@@ -77,7 +76,7 @@ def save_backfill_state(state):
         json.dump(state, f, indent=2)
 
 
-# ── Incremental Fetch ────────────────────────────────────
+# Incremental fetch
 def run_incremental(countries, days=7):
     """Fetch recent data for all countries."""
     print(f"\n  PHASE 1: Incremental (last {days} days)")
@@ -95,7 +94,7 @@ def run_incremental(countries, days=7):
     return results
 
 
-# ── Backfill Fetch ────────────────────────────────────────
+# Backfill fetch
 def run_backfill(countries, chunk_days=90):
     """
     Fetch the next chunk of historical data for each country.
@@ -170,7 +169,7 @@ def run_backfill(countries, chunk_days=90):
     return results
 
 
-# ── Main ──────────────────────────────────────────────────
+# Main
 def main():
     parser = argparse.ArgumentParser(description="Daily AQ Data Collector")
     parser.add_argument("--incremental-only", action="store_true",

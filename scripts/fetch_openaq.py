@@ -1,6 +1,5 @@
 """
-Multi-Country AQ Data Fetcher (OpenAQ v3)
-==========================================
+Multi-country AQ data fetcher (OpenAQ v3).
 Generic version of fetch_openaq_india.py that accepts any country.
 
 Supports:
@@ -28,7 +27,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 from datetime import datetime, timedelta, timezone
 
-# ── Country Config ────────────────────────────────────────
+# Country config
 COUNTRIES = {
     "IN": {"openaq_id": 9,    "name": "India"},
     "US": {"openaq_id": 155,  "name": "United States"},
@@ -36,7 +35,7 @@ COUNTRIES = {
     "AU": {"openaq_id": 177,  "name": "Australia"},
 }
 
-# ── Config ────────────────────────────────────────────────
+# Config
 API_BASE = "https://api.openaq.org/v3"
 DATE_FROM = "2021-01-01"
 RATE_LIMIT_SLEEP = 0.25
@@ -67,7 +66,7 @@ def get_checkpoint_file(country_code):
     return os.path.join(CHECKPOINT_DIR, f"checkpoint_{country_code}.json")
 
 
-# ── Step 1: Discover Stations ─────────────────────────────
+# Step 1: Discover stations
 def fetch_country_stations(country_code, headers):
     """Fetch all monitoring stations for a country."""
     country_info = COUNTRIES[country_code]
@@ -158,7 +157,7 @@ def get_station_id_map(conn, country_code):
         return {row[1]: row[0] for row in cur.fetchall()}
 
 
-# ── Step 2: Fetch Measurements ────────────────────────────
+# Step 2: Fetch measurements
 def fetch_station_sensors(station_openaq_id, headers):
     r = requests.get(
         f"{API_BASE}/locations/{station_openaq_id}/sensors",
@@ -234,7 +233,7 @@ def insert_measurements(conn, rows):
     return len(values)
 
 
-# ── Checkpoint ────────────────────────────────────────────
+# Checkpoint management
 def load_checkpoint(country_code):
     path = get_checkpoint_file(country_code)
     if os.path.exists(path):
@@ -259,7 +258,7 @@ def clear_checkpoint(country_code):
         os.remove(path)
 
 
-# ── Main ──────────────────────────────────────────────────
+# Main
 def run_fetch(country_code, days=None, date_from=None, date_to=None, resume=False):
     """
     Main fetch function. Can be called from CLI or from orchestrator.
