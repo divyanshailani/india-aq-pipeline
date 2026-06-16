@@ -33,7 +33,7 @@ COUNTRIES = {
     "IN": {"openaq_id": 9,    "name": "India"},
     "US": {"openaq_id": 155,  "name": "United States"},
     "GB": {"openaq_id": 79,   "name": "United Kingdom"},
-    "CN": {"openaq_id": 10,   "name": "China"},
+    "AU": {"openaq_id": 177,  "name": "Australia"},
 }
 
 # ── Config ────────────────────────────────────────────────
@@ -99,9 +99,9 @@ def fetch_country_stations(country_code, headers):
         for loc in results:
             stations.append({
                 "openaq_id": loc["id"],
-                "name": loc.get("name", f"Station-{loc['id']}"),
-                "city": loc.get("locality") or loc.get("name", ""),
-                "state": loc.get("country", {}).get("name", country_info["name"]),
+                "name": loc.get("name") or f"Station-{loc['id']}",
+                "city": loc.get("locality") or loc.get("name") or f"Unknown-{loc['id']}",
+                "state": (loc.get("country") or {}).get("name") or country_info["name"],
                 "country_code": country_code,
                 "latitude": loc.get("coordinates", {}).get("latitude"),
                 "longitude": loc.get("coordinates", {}).get("longitude"),

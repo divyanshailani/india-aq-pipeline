@@ -37,7 +37,7 @@ BACKFILL_STATE_FILE = os.path.join(LOG_DIR, "backfill_state.json")
 
 BACKFILL_START = "2021-01-01"
 # Countries to backfill (skip IN — already done)
-BACKFILL_COUNTRIES = ["US", "GB", "CN"]
+BACKFILL_COUNTRIES = ["US", "GB", "AU"]
 
 
 # ── Logging ───────────────────────────────────────────────
