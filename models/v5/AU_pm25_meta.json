@@ -1,0 +1,79 @@
+{
+  "country": "AU",
+  "model": "GradientBoostingRegressor",
+  "version": "v5",
+  "features": [
+    "month",
+    "day_of_week",
+    "is_weekend",
+    "day_of_year",
+    "lag_1",
+    "lag_2",
+    "lag_3",
+    "lag_7",
+    "roll_3_mean",
+    "roll_7_mean",
+    "roll_3_std"
+  ],
+  "train_rows": 66159,
+  "test_rows": 16595,
+  "train_stations": 167,
+  "test_stations": 167,
+  "train_date_range": [
+    "2021-01-02",
+    "2026-06-11"
+  ],
+  "test_date_range": [
+    "2021-09-06",
+    "2026-06-17"
+  ],
+  "metrics": {
+    "train_r2": 0.7417,
+    "test_r2": 0.6437,
+    "test_mae": 1.55,
+    "test_rmse": 2.21,
+    "overfit_delta": 0.098
+  },
+  "top_features": [
+    [
+      "roll_7_mean",
+      0.3171
+    ],
+    [
+      "lag_1",
+      0.2481
+    ],
+    [
+      "roll_3_std",
+      0.2361
+    ],
+    [
+      "lag_2",
+      0.11
+    ],
+    [
+      "roll_3_mean",
+      0.0514
+    ],
+    [
+      "lag_3",
+      0.0188
+    ],
+    [
+      "day_of_year",
+      0.0093
+    ],
+    [
+      "lag_7",
+      0.0042
+    ],
+    [
+      "day_of_week",
+      0.0041
+    ],
+    [
+      "month",
+      0.0006
+    ]
+  ]
+}

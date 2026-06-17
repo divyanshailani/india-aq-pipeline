@@ -7,9 +7,19 @@ data/processed/*
 # Large data CSVs (regenerable via scripts)
 data/weather_nasa_power.csv
 data/weather_nasa_power_extra.csv
+data/weather_nasa_au.csv
+data/weather_nasa_gb.csv
+data/weather_nasa_us.csv
 data/fire_counts_firms.csv
+data/fire_counts_au.csv
+data/fire_counts_gb.csv
+data/fire_counts_us.csv
 
-# Models (too large for git, regenerable)
+# Prediction CSVs (regenerable, kept as JSON in site_data/)
+data/predictions/
+
+# Models (too large for git, regenerable via train_v5.py)
+models/**/*.pkl
 models/*.pkl
 
 # Python
@@ -34,3 +44,4 @@ logs/
 # Secrets
 .env
 .env.*
+!.env.example

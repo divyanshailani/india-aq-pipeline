@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-06-17T20:11:19.824373",
+  "model_version": "v5",
+  "countries": {
+    "IN": {
+      "name": "India",
+      "flag": "\ud83c\uddee\ud83c\uddf3",
+      "confidence": "high",
+      "tag": "High Confidence",
+      "tag_color": "green",
+      "reason": "R\u00b2=0.77 on 31K features, CPCB reference + NASA weather/fire data",
+      "test_r2": 0.7718,
+      "test_mae": 8.52,
+      "station_count": 50,
+      "last_data_date": "2026-06-17",
+      "forecast_days": 30
+    },
+    "US": {
+      "name": "United States",
+      "flag": "\ud83c\uddfa\ud83c\uddf8",
+      "confidence": "high",
+      "tag": "High Confidence",
+      "tag_color": "green",
+      "reason": "R\u00b2=0.80 on 1.4M features, EPA AQS reference-grade stations",
+      "test_r2": 0.7976,
+      "test_mae": 1.7,
+      "station_count": 50,
+      "last_data_date": "2026-06-16",
+      "forecast_days": 30
+    },
+    "GB": {
+      "name": "United Kingdom",
+      "flag": "\ud83c\uddec\ud83c\udde7",
+      "confidence": "experimental",
+      "tag": "Experimental: Limited Seasonal Data",
+      "tag_color": "yellow",
+      "reason": "R\u00b2=0.48, fragmented community sensors + 6mo DEFRA data",
+      "test_r2": 0.4817,
+      "test_mae": 2.01,
+      "station_count": 50,
+      "last_data_date": "2026-06-17",
+      "forecast_days": 30
+    },
+    "AU": {
+      "name": "Australia",
+      "flag": "\ud83c\udde6\ud83c\uddfa",
+      "confidence": "stable",
+      "tag": "Low Variance / Stable",
+      "tag_color": "blue",
+      "reason": "R\u00b2=0.64, clean-air country with NSW EPA reference data",
+      "test_r2": 0.6437,
+      "test_mae": 1.55,
+      "station_count": 50,
+      "last_data_date": "2026-06-17",
+      "forecast_days": 30
+    }
+  },
+  "live_accuracy": {
+    "mae": null,
+    "r2": null,
+    "note": "Based on validated predictions vs actual observations"
+  }
+}

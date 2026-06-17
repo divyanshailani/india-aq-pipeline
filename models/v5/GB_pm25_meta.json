@@ -1,0 +1,81 @@
+{
+  "country": "GB",
+  "model": "GradientBoostingRegressor",
+  "version": "v5",
+  "features": [
+    "month",
+    "day_of_week",
+    "is_weekend",
+    "day_of_year",
+    "lag_1",
+    "lag_2",
+    "lag_3",
+    "lag_7",
+    "roll_3_mean",
+    "roll_7_mean",
+    "roll_3_std",
+    "temperature",
+    "humidity"
+  ],
+  "train_rows": 24516,
+  "test_rows": 6292,
+  "train_stations": 319,
+  "test_stations": 319,
+  "train_date_range": [
+    "2021-01-03",
+    "2026-06-13"
+  ],
+  "test_date_range": [
+    "2021-02-08",
+    "2026-06-17"
+  ],
+  "metrics": {
+    "train_r2": 0.8329,
+    "test_r2": 0.4817,
+    "test_mae": 2.01,
+    "test_rmse": 9.15,
+    "overfit_delta": 0.3512
+  },
+  "top_features": [
+    [
+      "lag_1",
+      0.333
+    ],
+    [
+      "roll_3_std",
+      0.2163
+    ],
+    [
+      "roll_7_mean",
+      0.1748
+    ],
+    [
+      "lag_2",
+      0.1016
+    ],
+    [
+      "day_of_year",
+      0.0461
+    ],
+    [
+      "roll_3_mean",
+      0.036
+    ],
+    [
+      "humidity",
+      0.0277
+    ],
+    [
+      "lag_3",
+      0.0266
+    ],
+    [
+      "day_of_week",
+      0.0241
+    ],
+    [
+      "temperature",
+      0.0055
+    ]
+  ]
+}
