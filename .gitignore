@@ -30,3 +30,7 @@ Thumbs.db
 Icon?
 scripts/.checkpoints/
 logs/
+
+# Secrets
+.env
+.env.*

@@ -14,6 +14,16 @@ from datetime import datetime
 PROJECT_DIR = "/Users/divyanshailani/Desktop/pow-eda-pipeline"
 LOG_DIR = os.path.join(PROJECT_DIR, "logs")
 LOG_FILE = os.path.join(LOG_DIR, "auto_commit.log")
+ENV_FILE = os.path.join(PROJECT_DIR, ".env")
+
+# Load .env file into environment
+if os.path.exists(ENV_FILE):
+    with open(ENV_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip()
 
 # Ensure log dir exists
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -33,7 +43,6 @@ def run_cmd(cmd, cwd=None):
         cwd=cwd or PROJECT_DIR,
         env={**os.environ, 
              "PATH": "/usr/local/bin:/usr/bin:/bin:/Library/Frameworks/Python.framework/Versions/3.14/bin",
-             "OPENAQ_API_KEY": "67e85101744e1e2da4188d0eed8ce8d79fa76fb622c7267038bca4a01860076a",
              "HOME": os.path.expanduser("~")}
     )
     if result.stdout.strip():
