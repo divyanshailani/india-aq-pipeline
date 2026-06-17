@@ -22,7 +22,7 @@ echo "========================================" >> "$LOG_FILE"
 cd "$PROJECT_DIR"
 
 # Load OpenAQ API key
-export OPENAQ_API_KEY="8241b2de40d1b592da6792a98788757fd64f99b984843b1d8ed968a7379123ae"
+export OPENAQ_API_KEY="67e85101744e1e2da4188d0eed8ce8d79fa76fb622c7267038bca4a01860076a"
 
 # Run daily collection (last 7 days, all countries)
 $PYTHON scripts/run_daily_collector.py --days 7 >> "$LOG_FILE" 2>&1
