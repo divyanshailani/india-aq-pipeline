@@ -69,6 +69,19 @@ def get_db():
     return psycopg2.connect(**DB_CONFIG)
 
 
+def ensure_tracking_schema(conn):
+    """Allow the admin panel to read newer metric columns on older local DBs."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            ALTER TABLE pipeline_runs
+                ADD COLUMN IF NOT EXISTS backtest_mae DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS backtest_r2 DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS metric_source TEXT,
+                ADD COLUMN IF NOT EXISTS metric_sample_count INTEGER
+        """)
+    conn.commit()
+
+
 def add_log(msg: str):
     ts = datetime.now().strftime("%H:%M:%S")
     pipeline_state["logs"].append(f"[{ts}] {msg}")
@@ -88,6 +101,7 @@ async def get_status():
     """Return full system status: data gaps, model info, run history."""
     try:
         conn = get_db()
+        ensure_tracking_schema(conn)
         cur = conn.cursor()
 
         # ── Data gaps per country ──
@@ -115,12 +129,16 @@ async def get_status():
         # ── Recent pipeline runs ──
         cur.execute("""
             SELECT run_id, run_date, predictions_made, validations_done,
-                   live_mae, live_r2, status
+                   live_mae, live_r2, backtest_mae, backtest_r2,
+                   metric_source, metric_sample_count, status
             FROM pipeline_runs
             ORDER BY run_date DESC LIMIT 10
         """)
         runs = []
         for r in cur.fetchall():
+            metric_source = r[8] or ("live" if r[4] is not None else None)
+            metric_mae = r[4] if metric_source == "live" else r[6]
+            metric_r2 = r[5] if metric_source == "live" else r[7]
             runs.append({
                 "run_id": str(r[0])[:8],
                 "date": str(r[1]),
@@ -128,7 +146,13 @@ async def get_status():
                 "validations": r[3],
                 "live_mae": round(float(r[4]), 2) if r[4] else None,
                 "live_r2": round(float(r[5]), 4) if r[5] else None,
-                "status": r[6],
+                "backtest_mae": round(float(r[6]), 2) if r[6] else None,
+                "backtest_r2": round(float(r[7]), 4) if r[7] else None,
+                "metric_source": metric_source,
+                "metric_sample_count": r[9],
+                "metric_mae": round(float(metric_mae), 2) if metric_mae else None,
+                "metric_r2": round(float(metric_r2), 4) if metric_r2 else None,
+                "status": r[10],
             })
 
         # ── Model metadata from JSON ──
@@ -742,7 +766,7 @@ ADMIN_HTML = """<!DOCTYPE html>
                 <thead>
                     <tr>
                         <th>Run</th><th>Date</th><th>Predictions</th>
-                        <th>Validated</th><th>Live MAE</th><th>Live R²</th><th>Status</th>
+                        <th>Validated</th><th>Metric</th><th>MAE</th><th>R²</th><th>Status</th>
                     </tr>
                 </thead>
                 <tbody id="runHistory"></tbody>
@@ -813,13 +837,15 @@ ADMIN_HTML = """<!DOCTYPE html>
                 for (const r of (d.runs || [])) {
                     const tagClass = r.status === 'completed' ? 'tag-green' : r.status === 'running' ? 'tag-amber' : 'tag-red';
                     const tagText = r.status === 'completed' ? '✓ Done' : r.status === 'running' ? '⏳ Running' : '✗ Error';
+                    const source = r.metric_source ? `${r.metric_source}${r.metric_sample_count ? ` (${r.metric_sample_count})` : ''}` : '—';
                     tbody.innerHTML += `<tr>
                         <td style="font-family:'JetBrains Mono';font-size:0.75rem;">${r.run_id}</td>
                         <td>${r.date}</td>
                         <td>${r.predictions?.toLocaleString() ?? '—'}</td>
                         <td>${r.validations ?? '—'}</td>
-                        <td>${r.live_mae ?? '—'}</td>
-                        <td>${r.live_r2 ?? '—'}</td>
+                        <td>${source}</td>
+                        <td>${r.metric_mae ?? '—'}</td>
+                        <td>${r.metric_r2 ?? '—'}</td>
                         <td><span class="tag ${tagClass}">${tagText}</span></td>
                     </tr>`;
                 }

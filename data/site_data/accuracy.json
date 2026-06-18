@@ -1,23 +1,26 @@
 {
-  "generated_at": "2026-06-18T10:04:18.358829",
-  "live_mae": null,
-  "live_r2": null,
+  "generated_at": "2026-06-18T10:33:11.838292",
+  "mae": 9.95,
+  "r2": 0.1004,
+  "source": "backtest",
+  "sample_count": 6922,
+  "live_validation_count": 0,
   "training_metrics": {
     "IN": {
-      "r2": 0.7718,
-      "mae": 8.52
+      "r2": 0.6399,
+      "mae": 10.18
     },
     "US": {
-      "r2": 0.7976,
-      "mae": 1.7
-    },
-    "GB": {
-      "r2": 0.4817,
+      "r2": 0.6783,
       "mae": 2.01
     },
+    "GB": {
+      "r2": 0.2082,
+      "mae": 2.68
+    },
     "AU": {
-      "r2": 0.6437,
-      "mae": 1.55
+      "r2": 0.6017,
+      "mae": 1.61
     }
   },
   "confidence_explanation": {

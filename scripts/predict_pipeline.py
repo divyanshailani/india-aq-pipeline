@@ -34,6 +34,9 @@ MODEL_DIR = _MODEL_DIR
 OUTPUT_DIR = SITE_DATA_DIR
 
 COUNTRIES = ["IN", "US", "GB", "AU"]
+ACTIVE_STATION_MAX_AGE_DAYS = 7
+RECENT_CONTEXT_DAYS = 14
+MIN_LIVE_VALIDATIONS = 100
 
 COUNTRY_META = {
     "IN": {
@@ -42,9 +45,9 @@ COUNTRY_META = {
         "confidence": "high",
         "tag": "High Confidence",
         "tag_color": "green",
-        "reason": "R²=0.77 on 31K features, CPCB reference + NASA weather/fire data",
-        "test_r2": 0.7718,
-        "test_mae": 8.52,
+        "reason": "R²=0.64 on 31K features, CPCB reference + NASA weather/fire data",
+        "test_r2": 0.6399,
+        "test_mae": 10.18,
     },
     "US": {
         "name": "United States",
@@ -52,9 +55,9 @@ COUNTRY_META = {
         "confidence": "high",
         "tag": "High Confidence",
         "tag_color": "green",
-        "reason": "R²=0.80 on 1.4M features, EPA AQS reference-grade stations",
-        "test_r2": 0.7976,
-        "test_mae": 1.70,
+        "reason": "R²=0.68 on 1.4M features, EPA AQS reference-grade stations",
+        "test_r2": 0.6783,
+        "test_mae": 2.01,
     },
     "GB": {
         "name": "United Kingdom",
@@ -62,9 +65,9 @@ COUNTRY_META = {
         "confidence": "experimental",
         "tag": "Experimental: Limited Seasonal Data",
         "tag_color": "yellow",
-        "reason": "R²=0.48, fragmented community sensors + 6mo DEFRA data",
-        "test_r2": 0.4817,
-        "test_mae": 2.01,
+        "reason": "R²=0.21, fragmented community sensors + limited data",
+        "test_r2": 0.2082,
+        "test_mae": 2.68,
     },
     "AU": {
         "name": "Australia",
@@ -72,9 +75,9 @@ COUNTRY_META = {
         "confidence": "stable",
         "tag": "Low Variance / Stable",
         "tag_color": "blue",
-        "reason": "R²=0.64, clean-air country with NSW EPA reference data",
-        "test_r2": 0.6437,
-        "test_mae": 1.55,
+        "reason": "R²=0.60, clean-air country with NSW EPA reference data",
+        "test_r2": 0.6017,
+        "test_mae": 1.61,
     },
 }
 
@@ -87,6 +90,23 @@ def get_last_run_date(conn):
     return result.date() if result else None
 
 
+def ensure_tracking_schema(conn):
+    """Keep local tracking tables compatible with current metrics reporting."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            ALTER TABLE pipeline_runs
+                ADD COLUMN IF NOT EXISTS backtest_mae DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS backtest_r2 DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS metric_source TEXT,
+                ADD COLUMN IF NOT EXISTS metric_sample_count INTEGER
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_prediction_log_run_target
+                ON prediction_log (run_date, target_date, country_code)
+        """)
+    conn.commit()
+
+
 def validate_old_predictions(conn, run_id):
     """
     Compare old predictions (where target_date <= today and actual is NULL)
@@ -96,28 +116,33 @@ def validate_old_predictions(conn, run_id):
     validated = 0
 
     with conn.cursor() as cur:
-        # Find unvalidated predictions whose target date has passed
+        # Only validate plausible completed forecasts.
+        # target_date >= run_date quarantines old bad rows generated from stale
+        # station anchors (for example, a 2026 run forecasting from 2021 data).
         cur.execute("""
             SELECT pl.id, pl.station_id, pl.target_date, pl.predicted_value, pl.country_code
             FROM prediction_log pl
             WHERE pl.actual_value IS NULL
-              AND pl.target_date <= %s
+              AND pl.target_date < %s
+              AND pl.target_date >= pl.run_date
         """, (today,))
         pending = cur.fetchall()
 
-        if not pending:
+        if pending:
+            print(f"  Found {len(pending)} predictions to validate...")
+        else:
             print("  No predictions to validate")
-            return 0, None, None
-
-        print(f"  Found {len(pending)} predictions to validate...")
 
         for pid, station_id, target_date, predicted, cc in pending:
-            # Fetch actual PM2.5 for that station+date
+            # Validate against daily_features, the same daily target table used
+            # for training and forecasting.
             cur.execute("""
-                SELECT AVG(r.value) FROM raw_measurements r
-                WHERE r.station_id = %s
-                  AND r.parameter = 'pm25'
-                  AND r.datetime_utc::date = %s
+                SELECT value FROM daily_features
+                WHERE station_id = %s
+                  AND parameter = 'pm25'
+                  AND date = %s
+                  AND value IS NOT NULL
+                LIMIT 1
             """, (station_id, target_date))
             result = cur.fetchone()
             actual = result[0] if result and result[0] is not None else None
@@ -133,16 +158,18 @@ def validate_old_predictions(conn, run_id):
 
         conn.commit()
 
-        # Calculate live metrics from all validated predictions (last 90 days)
+        # Calculate live metrics only when the sample is large enough to trust.
         cur.execute("""
             SELECT actual_value, predicted_value
             FROM prediction_log
             WHERE actual_value IS NOT NULL
               AND validated_at >= NOW() - INTERVAL '90 days'
+              AND target_date >= run_date
         """)
         rows = cur.fetchall()
 
-        if len(rows) >= 10:
+        live_sample_count = len(rows)
+        if live_sample_count >= MIN_LIVE_VALIDATIONS:
             actuals = np.array([r[0] for r in rows])
             preds = np.array([r[1] for r in rows])
             live_mae = float(np.mean(np.abs(actuals - preds)))
@@ -157,26 +184,132 @@ def validate_old_predictions(conn, run_id):
     if live_mae is not None:
         print(f"  Live MAE:  {live_mae:.2f} µg/m³")
         print(f"  Live R²:   {live_r2:.4f}")
+    else:
+        print(f"  Live metrics hidden until {MIN_LIVE_VALIDATIONS}+ validations")
 
-    return validated, live_mae, live_r2
+    return validated, live_mae, live_r2, live_sample_count
 
 
-def get_recent_features(conn, country_code, n_days=14):
-    """Get the most recent features per station for a country."""
+def backtest_recent(conn, n_days=7):
+    """
+    Backtest: predict the last N days of known data and compare to actuals.
+    Gives fresh accuracy metrics every run without waiting for future validation.
+    """
+    print(f"\n  Backtesting last {n_days} days against actuals...")
+    
+    all_actuals = []
+    all_preds = []
+    country_metrics = {}
+
+    for cc in COUNTRIES:
+        meta_path = os.path.join(MODEL_DIR, f"{cc}_pm25_meta.json")
+        model_path = os.path.join(MODEL_DIR, f"{cc}_pm25_gbr.pkl")
+        if not os.path.exists(model_path):
+            continue
+
+        model = joblib.load(model_path)
+        with open(meta_path) as f:
+            meta = json.load(f)
+        feature_cols = meta["features"]
+
+        # Recent one-step backtest: known actual rows, using already-built lag features.
+        sql = """
+            SELECT * FROM daily_features
+            WHERE country_code = %s
+              AND parameter = 'pm25'
+              AND value IS NOT NULL
+              AND lag_1 IS NOT NULL
+              AND date >= CURRENT_DATE - (%s * INTERVAL '1 day')
+            ORDER BY station_id, date
+        """
+        df = pd.read_sql(sql, conn, params=(cc, n_days + RECENT_CONTEXT_DAYS))
+        if df.empty or len(df) < 10:
+            continue
+
+        # Only predict rows from last N days (but use older rows for context)
+        cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=n_days)
+        test_mask = pd.to_datetime(df["date"]) >= cutoff
+
+        # Ensure feature columns exist
+        available = [c for c in feature_cols if c in df.columns]
+        if not available:
+            continue
+
+        test_df = df[test_mask].copy()
+        if test_df.empty:
+            continue
+
+        # Fill missing features with 0 and preserve training feature order.
+        for col in feature_cols:
+            if col not in test_df.columns:
+                test_df[col] = 0
+            test_df[col] = pd.to_numeric(test_df[col], errors="coerce").fillna(0)
+
+        X_test = test_df[feature_cols]
+        y_actual = test_df["value"].values
+
+        try:
+            y_pred = model.predict(X_test)
+        except Exception:
+            continue
+
+        mae = float(np.mean(np.abs(y_actual - y_pred)))
+        ss_res = np.sum((y_actual - y_pred) ** 2)
+        ss_tot = np.sum((y_actual - np.mean(y_actual)) ** 2)
+        r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else 0
+
+        country_metrics[cc] = {"r2": round(r2, 4), "mae": round(mae, 2), "n": len(y_actual)}
+        all_actuals.extend(y_actual.tolist())
+        all_preds.extend(y_pred.tolist())
+
+        print(f"    {cc}: R²={r2:.4f}  MAE={mae:.2f} µg/m³  ({len(y_actual)} samples)")
+
+    if all_actuals:
+        actuals = np.array(all_actuals)
+        preds = np.array(all_preds)
+        overall_mae = float(np.mean(np.abs(actuals - preds)))
+        ss_res = np.sum((actuals - preds) ** 2)
+        ss_tot = np.sum((actuals - np.mean(actuals)) ** 2)
+        overall_r2 = float(1 - ss_res / ss_tot) if ss_tot > 0 else 0
+
+        print(f"\n  📊 Backtest (last {n_days}d):")
+        print(f"     Overall R²:  {overall_r2:.4f}")
+        print(f"     Overall MAE: {overall_mae:.2f} µg/m³")
+        print(f"     Samples:     {len(actuals):,}")
+
+        return overall_mae, overall_r2, len(actuals), country_metrics
+    
+    return None, None, 0, {}
+
+
+def get_recent_features(conn, country_code, n_days=RECENT_CONTEXT_DAYS,
+                        active_days=ACTIVE_STATION_MAX_AGE_DAYS):
+    """Get recent context only for stations that are still active."""
     sql = """
-        WITH ranked AS (
-            SELECT *,
-                ROW_NUMBER() OVER (PARTITION BY station_id ORDER BY date DESC) as rn
+        WITH active_stations AS (
+            SELECT station_id, MAX(date) AS last_date, COUNT(*) AS total_rows
             FROM daily_features
             WHERE country_code = %s
               AND parameter = 'pm25'
               AND value IS NOT NULL
               AND lag_1 IS NOT NULL
+            GROUP BY station_id
+            HAVING MAX(date) >= CURRENT_DATE - (%s * INTERVAL '1 day')
+        ),
+        ranked AS (
+            SELECT df.*, a.last_date, a.total_rows,
+                   ROW_NUMBER() OVER (PARTITION BY df.station_id ORDER BY df.date DESC) as rn
+            FROM daily_features df
+            JOIN active_stations a ON a.station_id = df.station_id
+            WHERE df.country_code = %s
+              AND df.parameter = 'pm25'
+              AND df.value IS NOT NULL
+              AND df.lag_1 IS NOT NULL
         )
         SELECT * FROM ranked WHERE rn <= %s
         ORDER BY station_id, date
     """
-    return pd.read_sql(sql, conn, params=(country_code, n_days))
+    return pd.read_sql(sql, conn, params=(country_code, active_days, country_code, n_days))
 
 
 def predict_horizon(model, features, last_row, horizon_days, meta_path):
@@ -281,22 +414,35 @@ def run_predictions(conn, run_id):
         model = joblib.load(model_path)
         print(f"\n  {COUNTRY_META[cc]['flag']} {cc}: Generating forecasts...")
 
-        # Get recent features
-        df = get_recent_features(conn, cc, n_days=14)
+        # Get recent features only from active stations.
+        df = get_recent_features(conn, cc)
         if df.empty:
-            print(f"    No recent features for {cc}")
+            print(f"    No active stations for {cc} in the last {ACTIVE_STATION_MAX_AGE_DAYS} days")
             continue
 
-        # Get top stations by data coverage
-        station_counts = df.groupby("station_id").size()
-        top_stations = station_counts.nlargest(min(50, len(station_counts))).index.tolist()
+        # Prefer fresh stations first, then stations with enough context rows.
+        station_stats = (
+            df.groupby("station_id")
+            .agg(rows=("date", "size"), last_date=("date", "max"))
+            .sort_values(["last_date", "rows"], ascending=[False, False])
+        )
+        top_stations = station_stats.head(min(50, len(station_stats))).index.tolist()
 
         country_preds = []
         for sid in top_stations:
             station_df = df[df["station_id"] == sid].sort_values("date")
             last_row = station_df.iloc[-1].to_dict()
+            last_data_date = pd.to_datetime(last_row["date"]).date()
+            if (date.today() - last_data_date).days > ACTIVE_STATION_MAX_AGE_DAYS:
+                continue
 
             preds = predict_horizon(model, df, last_row, horizon_days=30, meta_path=meta_path)
+            preds = [
+                p for p in preds
+                if pd.to_datetime(p["target_date"]).date() >= date.today()
+            ]
+            if not preds:
+                continue
 
             for p in preds:
                 p["station_id"] = int(sid)
@@ -318,6 +464,10 @@ def run_predictions(conn, run_id):
                     VALUES %s
                 """, values)
             conn.commit()
+
+        if not country_preds:
+            print(f"    No valid current/future forecasts for {cc}")
+            continue
 
         # Aggregate country-level forecast (mean of all stations)
         preds_df = pd.DataFrame(country_preds)
@@ -344,7 +494,8 @@ def run_predictions(conn, run_id):
     return all_predictions, total_predictions
 
 
-def export_site_data(predictions, live_mae, live_r2):
+def export_site_data(predictions, metric_mae, metric_r2, metric_source,
+                     metric_sample_count, live_validation_count):
     """Export JSON files for the Vercel static site."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -359,10 +510,16 @@ def export_site_data(predictions, live_mae, live_r2):
         "generated_at": datetime.now().isoformat(),
         "model_version": "v5",
         "countries": {},
-        "live_accuracy": {
-            "mae": round(live_mae, 2) if live_mae else None,
-            "r2": round(live_r2, 4) if live_r2 else None,
-            "note": "Based on validated predictions vs actual observations"
+        "accuracy": {
+            "mae": round(metric_mae, 2) if metric_mae is not None else None,
+            "r2": round(metric_r2, 4) if metric_r2 is not None else None,
+            "source": metric_source,
+            "sample_count": metric_sample_count,
+            "live_validation_count": live_validation_count,
+            "note": (
+                "Live metrics require 100+ validated completed forecasts. "
+                "Backtest metrics are recent one-step checks against known actuals."
+            ),
         }
     }
     for cc in COUNTRIES:
@@ -379,8 +536,11 @@ def export_site_data(predictions, live_mae, live_r2):
     # Accuracy data for the proof section
     accuracy = {
         "generated_at": datetime.now().isoformat(),
-        "live_mae": round(live_mae, 2) if live_mae else None,
-        "live_r2": round(live_r2, 4) if live_r2 else None,
+        "mae": round(metric_mae, 2) if metric_mae is not None else None,
+        "r2": round(metric_r2, 4) if metric_r2 is not None else None,
+        "source": metric_source,
+        "sample_count": metric_sample_count,
+        "live_validation_count": live_validation_count,
         "training_metrics": {
             cc: {"r2": m["test_r2"], "mae": m["test_mae"]}
             for cc, m in COUNTRY_META.items()
@@ -408,6 +568,7 @@ def main():
     start = time.time()
     run_id = uuid.uuid4()
     conn = psycopg2.connect(**DB_CONFIG)
+    ensure_tracking_schema(conn)
 
     print("═" * 60)
     print("  GLOBAL AQ INTELLIGENCE — PREDICTION PIPELINE")
@@ -434,7 +595,7 @@ def main():
     print(f"\n{'─'*60}")
     print("  Phase 1: Validate Old Predictions")
     print(f"{'─'*60}")
-    validated, live_mae, live_r2 = validate_old_predictions(conn, run_id)
+    validated, live_mae, live_r2, live_validation_count = validate_old_predictions(conn, run_id)
 
     # Phase 3: Generate new predictions
     print(f"\n{'─'*60}")
@@ -442,33 +603,45 @@ def main():
     print(f"{'─'*60}")
     predictions, total_preds = run_predictions(conn, run_id)
 
+    # Phase 3.5: Backtest — predict last 7 days vs actuals for fresh metrics
+    print(f"\n{'─'*60}")
+    print("  Phase 2.5: Backtest (Last 7 Days vs Actuals)")
+    print(f"{'─'*60}")
+    bt_mae, bt_r2, bt_sample_count, bt_country = backtest_recent(conn, n_days=7)
+
     # Phase 4: Export JSON for site
     print(f"\n{'─'*60}")
     print("  Phase 3: Export Site Data")
     print(f"{'─'*60}")
-    export_site_data(predictions, live_mae, live_r2)
+
+    # Priority: live validated > backtest > none, with source shown honestly.
+    if live_mae is not None:
+        display_mae = live_mae
+        display_r2 = live_r2
+        metrics_source = "live"
+        metric_sample_count = live_validation_count
+    elif bt_mae is not None:
+        display_mae = bt_mae
+        display_r2 = bt_r2
+        metrics_source = "backtest"
+        metric_sample_count = bt_sample_count
+    else:
+        display_mae = None
+        display_r2 = None
+        metrics_source = "none"
+        metric_sample_count = 0
+
+    export_site_data(
+        predictions,
+        display_mae,
+        display_r2,
+        metrics_source,
+        metric_sample_count,
+        live_validation_count,
+    )
 
     # Update run record
     elapsed = time.time() - start
-
-    # Load training metrics as fallback
-    train_r2 = None
-    train_mae = None
-    meta_path = os.path.join(MODEL_DIR, "all_models_meta.json")
-    if os.path.exists(meta_path):
-        with open(meta_path) as f:
-            all_meta = json.load(f)
-        # Average across countries
-        r2s = [m["metrics"]["test_r2"] for m in all_meta.values() if "metrics" in m]
-        maes = [m["metrics"]["test_mae"] for m in all_meta.values() if "metrics" in m]
-        if r2s:
-            train_r2 = round(sum(r2s) / len(r2s), 4)
-            train_mae = round(sum(maes) / len(maes), 2)
-
-    # Use live if available, otherwise training metrics
-    display_mae = live_mae if live_mae else train_mae
-    display_r2 = live_r2 if live_r2 else train_r2
-    metrics_source = "live" if live_mae else "training"
 
     with conn.cursor() as cur:
         cur.execute("""
@@ -477,9 +650,23 @@ def main():
                 predictions_made = %s,
                 validations_done = %s,
                 live_mae = %s,
-                live_r2 = %s
+                live_r2 = %s,
+                backtest_mae = %s,
+                backtest_r2 = %s,
+                metric_source = %s,
+                metric_sample_count = %s
             WHERE run_id = %s
-        """, (total_preds, validated, display_mae, display_r2, str(run_id)))
+        """, (
+            total_preds,
+            validated,
+            live_mae,
+            live_r2,
+            bt_mae,
+            bt_r2,
+            metrics_source,
+            metric_sample_count,
+            str(run_id),
+        ))
     conn.commit()
 
     print(f"\n{'═'*60}")
@@ -488,15 +675,13 @@ def main():
     print(f"  Predictions: {total_preds:,}")
     print(f"  Validated:   {validated}")
     if display_mae is not None:
-        label = "Live" if metrics_source == "live" else "Model"
+        label = {"live": "Live", "backtest": "Backtest", "none": ""}[metrics_source]
         print(f"  {label} MAE:  {display_mae:.2f} µg/m³")
         print(f"  {label} R²:   {display_r2:.4f}")
-        if metrics_source == "training":
-            print(f"  (Using training metrics — live metrics available after validation)")
+        print(f"  Samples:     {metric_sample_count:,}")
 
     conn.close()
 
 
 if __name__ == "__main__":
     main()
-

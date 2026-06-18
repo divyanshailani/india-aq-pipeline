@@ -183,14 +183,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_active_model
 -- 7. PIPELINE RUNS — track daily pipeline executions (v5)
 CREATE TABLE IF NOT EXISTS pipeline_runs (
     id              SERIAL PRIMARY KEY,
-    run_date        DATE NOT NULL DEFAULT CURRENT_DATE,
-    step            TEXT NOT NULL,                    -- 'fetch', 'predict', 'deploy', 'retrain'
-    status          TEXT NOT NULL DEFAULT 'running',  -- 'running', 'success', 'failed'
-    started_at      TIMESTAMPTZ DEFAULT now(),
-    finished_at     TIMESTAMPTZ,
-    predictions     INTEGER DEFAULT 0,               -- number of predictions generated
-    log             TEXT,                             -- summary or error message
-    created_at      TIMESTAMPTZ DEFAULT now()
+    run_id          UUID UNIQUE NOT NULL,
+    run_date        TIMESTAMP NOT NULL DEFAULT now(),
+    data_from       DATE,
+    data_to         DATE,
+    days_fetched    INTEGER DEFAULT 0,
+    predictions_made INTEGER DEFAULT 0,
+    validations_done INTEGER DEFAULT 0,
+    live_mae        DOUBLE PRECISION,                 -- true forward validation only
+    live_r2         DOUBLE PRECISION,                 -- hidden until sample count is trustworthy
+    backtest_mae    DOUBLE PRECISION,                 -- recent one-step backtest
+    backtest_r2     DOUBLE PRECISION,
+    metric_source   TEXT,                             -- 'live', 'backtest', or 'none'
+    metric_sample_count INTEGER DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'running',
+    log             TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_date
@@ -200,19 +207,61 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_runs_date
 -- 8. PREDICTION LOG — track accuracy of past predictions (v5)
 CREATE TABLE IF NOT EXISTS prediction_log (
     id              SERIAL PRIMARY KEY,
-    prediction_date DATE NOT NULL,                   -- when the prediction was made
-    target_date     DATE NOT NULL,                   -- date the prediction was for
+    run_id          UUID REFERENCES pipeline_runs(run_id),
+    run_date        DATE NOT NULL DEFAULT CURRENT_DATE,
     country_code    CHAR(2),
     station_id      INTEGER REFERENCES stations(id),
+    target_date     DATE NOT NULL,                   -- date the prediction was for
+    horizon_days    INTEGER NOT NULL,
     predicted_value DOUBLE PRECISION,
-    actual_value    DOUBLE PRECISION,                 -- filled in next day by validator
-    abs_error       DOUBLE PRECISION,                 -- |predicted - actual|
-    model_version   TEXT,
-    created_at      TIMESTAMPTZ DEFAULT now()
+    actual_value    DOUBLE PRECISION,                 -- filled by validator after actual arrives
+    error           DOUBLE PRECISION,                 -- actual - predicted
+    validated_at    TIMESTAMP,
+    created_at      TIMESTAMP DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_prediction_log_dates
     ON prediction_log (target_date, country_code);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_log_run_target
+    ON prediction_log (run_date, target_date, country_code);
+
+
+-- 9. PREDICTION LOG ARCHIVE — invalid/debug rows removed from active metrics
+CREATE TABLE IF NOT EXISTS prediction_log_archive
+(LIKE prediction_log INCLUDING DEFAULTS INCLUDING CONSTRAINTS);
+
+ALTER TABLE prediction_log_archive
+    ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS archive_reason TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_prediction_log_archive_reason
+    ON prediction_log_archive (archive_reason, archived_at);
+
+
+-- Compatibility migration for existing local databases
+ALTER TABLE pipeline_runs
+    ADD COLUMN IF NOT EXISTS run_id UUID,
+    ADD COLUMN IF NOT EXISTS data_from DATE,
+    ADD COLUMN IF NOT EXISTS data_to DATE,
+    ADD COLUMN IF NOT EXISTS days_fetched INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS predictions_made INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS validations_done INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS live_mae DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS live_r2 DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS backtest_mae DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS backtest_r2 DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS metric_source TEXT,
+    ADD COLUMN IF NOT EXISTS metric_sample_count INTEGER DEFAULT 0;
+
+ALTER TABLE prediction_log
+    ADD COLUMN IF NOT EXISTS run_id UUID,
+    ADD COLUMN IF NOT EXISTS run_date DATE DEFAULT CURRENT_DATE,
+    ADD COLUMN IF NOT EXISTS country_code CHAR(2),
+    ADD COLUMN IF NOT EXISTS station_id INTEGER REFERENCES stations(id),
+    ADD COLUMN IF NOT EXISTS horizon_days INTEGER,
+    ADD COLUMN IF NOT EXISTS error DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS validated_at TIMESTAMP;
 
 
 -- ============================================================
