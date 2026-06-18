@@ -27,16 +27,11 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
-DB_CONFIG = {
-    "dbname": "indiaaq",
-    "user": "postgres",
-    "password": "8765",
-    "host": "localhost",
-    "port": 5432,
-}
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG, MODEL_DIR as _MODEL_DIR, SITE_DATA_DIR
 
-MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v5")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "site_data")
+MODEL_DIR = _MODEL_DIR
+OUTPUT_DIR = SITE_DATA_DIR
 
 COUNTRIES = ["IN", "US", "GB", "AU"]
 
@@ -187,8 +182,15 @@ def get_recent_features(conn, country_code, n_days=14):
 def predict_horizon(model, features, last_row, horizon_days, meta_path):
     """
     Generate predictions for 1..horizon_days.
-    Days 1-7: direct prediction using real lags.
-    Days 8+: chained prediction using predicted values as lags.
+    
+    ⚠️  EXPERIMENTAL: 30-day chained forecast.
+    Confidence degrades as predictions feed back as inputs:
+      - Days 1-7:  HIGH   — direct prediction from real observed lags
+      - Days 8-15: MEDIUM — chained from earlier predictions
+      - Days 16-30: LOW   — deeply chained, treat as trend indication only
+    
+    This is useful for demo/trend visualization but should NOT be used
+    for operational decisions beyond day 7 without validation.
     """
     # Load feature list from metadata
     with open(meta_path) as f:

@@ -3,7 +3,10 @@ Ultra-fast NASA + Fire merge using pandas to_csv + COPY FROM.
 """
 import os, io, psycopg2, pandas as pd
 
-DB = dict(dbname="indiaaq", user="postgres", password="8765", host="localhost", port=5432)
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG
+DB = DB_CONFIG
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 def copy_df_to_temp(cur, conn, df, table_name, columns, create_sql):

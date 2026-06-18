@@ -20,13 +20,9 @@ import psycopg2
 from psycopg2.extras import execute_values
 import requests
 
-DB_CONFIG = {
-    "dbname": "indiaaq",
-    "user": "postgres",
-    "password": "8765",
-    "host": "localhost",
-    "port": 5432,
-}
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG
 
 SOS_BASE = "https://uk-air.defra.gov.uk/sos-ukair/api/v1"
 TIMESPAN = "2026-01-01T00:00:00Z/2026-06-17T23:59:59Z"

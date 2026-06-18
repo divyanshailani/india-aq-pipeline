@@ -1,24 +1,33 @@
 """
-Fetch NASA POWER weather for US, GB, AU stations.
-Includes: temperature, humidity, wind_speed, precipitation, wind_direction.
-Saves separate CSV per country to avoid overwriting India data.
+Fetch NASA POWER weather for all countries — DAILY MODE.
+=========================================================
+For admin panel daily runs: fetches only the last N days
+of weather data (default: 14 days) instead of the full 5-year
+historical range.
+
+For full historical backfill, use:
+    python scripts/fetch_nasa_global.py --backfill
 """
 
+import sys
+import os
 import time
+import argparse
+from datetime import datetime, timedelta
+
 import requests
 import psycopg2
 import pandas as pd
 
-DB_CONFIG = {
-    "dbname": "indiaaq", "user": "postgres",
-    "password": "8765", "host": "localhost", "port": "5432"
-}
+# Import shared config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG, DATA_DIR
 
 NASA_POWER_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
-SLEEP = 1.0
+SLEEP = 0.8
 
 
-def get_stations_for_country(conn, country_code):
+def get_stations_for_country(conn, country_code, limit=None):
     """Get stations with PM2.5 features for a country."""
     query = """
         SELECT DISTINCT s.id, s.name, s.latitude, s.longitude
@@ -30,6 +39,8 @@ def get_stations_for_country(conn, country_code):
           AND s.longitude IS NOT NULL
         ORDER BY s.id
     """
+    if limit:
+        query += f" LIMIT {limit}"
     return pd.read_sql(query, conn, params=(country_code,))
 
 
@@ -84,10 +95,10 @@ def fetch_nasa_power(lat, lon, start_date, end_date):
         return None, f"error: {e}"
 
 
-def fetch_country(country_code, start_date, end_date):
+def fetch_country(country_code, start_date, end_date, max_stations=None):
     """Fetch weather for all stations in a country."""
     conn = psycopg2.connect(**DB_CONFIG)
-    stations = get_stations_for_country(conn, country_code)
+    stations = get_stations_for_country(conn, country_code, limit=max_stations)
     conn.close()
 
     total = len(stations)
@@ -128,7 +139,7 @@ def fetch_country(country_code, start_date, end_date):
 
     if all_frames:
         result = pd.concat(all_frames, ignore_index=True)
-        output = f"data/weather_nasa_{country_code.lower()}.csv"
+        output = os.path.join(DATA_DIR, f"weather_nasa_{country_code.lower()}.csv")
         result.to_csv(output, index=False)
         print(f"\n  ✅ Saved {len(result):,} rows to {output}")
         print(f"  ❌ Failed: {failed} stations")
@@ -139,12 +150,30 @@ def fetch_country(country_code, start_date, end_date):
 
 
 def main():
-    # Date range matching what we have for India
-    start = "20210107"
-    end = "20260617"
+    parser = argparse.ArgumentParser(description="Fetch NASA POWER weather")
+    parser.add_argument("--backfill", action="store_true",
+                        help="Full 5-year historical fetch (slow)")
+    parser.add_argument("--days", type=int, default=14,
+                        help="Number of recent days to fetch (default: 14)")
+    parser.add_argument("--max-stations", type=int, default=None,
+                        help="Max stations per country (for testing)")
+    args = parser.parse_args()
+
+    if args.backfill:
+        start = "20210107"
+        end = datetime.now().strftime("%Y%m%d")
+        max_st = args.max_stations
+        print("🔄 BACKFILL MODE: Fetching full historical range")
+    else:
+        end_dt = datetime.now() - timedelta(days=1)
+        start_dt = end_dt - timedelta(days=args.days)
+        start = start_dt.strftime("%Y%m%d")
+        end = end_dt.strftime("%Y%m%d")
+        max_st = args.max_stations or 50  # limit for daily mode
+        print(f"📡 DAILY MODE: Last {args.days} days, max {max_st} stations/country")
 
     for cc in ["US", "GB", "AU"]:
-        fetch_country(cc, start, end)
+        fetch_country(cc, start, end, max_stations=max_st)
 
     print("\n\nAll done!")
 

@@ -27,13 +27,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 warnings.filterwarnings("ignore")
 
-DB_CONFIG = {
-    "dbname": "indiaaq",
-    "user": "postgres",
-    "password": "8765",
-    "host": "localhost",
-    "port": 5432,
-}
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG, MODEL_DIR as _MODEL_DIR
 
 # Features to use for training (all backward-looking, no leakage)
 FEATURE_COLS = [

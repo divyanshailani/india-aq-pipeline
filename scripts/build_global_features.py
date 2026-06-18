@@ -21,13 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.cleaning import run_cleaning_pipeline
 from src.features import run_feature_pipeline
 
-DB_CONFIG = {
-    "dbname": "indiaaq",
-    "user": "postgres",
-    "password": "8765",
-    "host": "localhost",
-    "port": 5432,
-}
+from src.config import DB_CONFIG, DATA_DIR
 
 PROJECT_DIR = os.path.join(os.path.dirname(__file__), "..")
 
@@ -173,17 +167,20 @@ def merge_fire_data(conn):
 
 
 def shift_rolling_features(conn):
-    """Fix data leakage: shift roll_3_mean and roll_7_mean by 1 day.
+    """Fix data leakage: recompute roll_3_mean, roll_7_mean, roll_3_std.
     
-    Current: roll_3_mean includes today's value (leakage!)
-    Fixed: roll_3_mean uses only past values (shifted by 1).
+    Problem: rolling features included today's target value (leakage!).
+    Fix: recompute using only lag values (past data only).
+    
+    roll_3_mean = mean(lag_1, lag_2, lag_3)      — 3-day trailing avg
+    roll_7_mean = mean(lag_1..lag_7)             — 7-day trailing avg (approximated)
+    roll_3_std  = stddev(lag_1, lag_2, lag_3)    — 3-day volatility
     """
-    print("  Fixing rolling feature leakage (shifting by 1 day)...")
+    print("  Fixing rolling feature leakage (all 3 features)...")
     with conn.cursor() as cur:
-        # For each station+parameter combo, recalculate rolling features
-        # using lag values instead of including current day
+        # Fix roll_3_mean: average of lag_1, lag_2, lag_3
         cur.execute("""
-            UPDATE daily_features df
+            UPDATE daily_features
             SET roll_3_mean = (COALESCE(lag_1, 0) + COALESCE(lag_2, 0) + COALESCE(lag_3, 0)) / 
                 NULLIF(
                     (CASE WHEN lag_1 IS NOT NULL THEN 1 ELSE 0 END) +
@@ -192,9 +189,53 @@ def shift_rolling_features(conn):
                 )
             WHERE lag_1 IS NOT NULL
         """)
-        fixed = cur.rowcount
+        r3 = cur.rowcount
+
+        # Fix roll_7_mean: approximate using lag_1..lag_7
+        # We only have lag_1, lag_2, lag_3, lag_7 stored, so use those 4 as best estimate
+        cur.execute("""
+            UPDATE daily_features
+            SET roll_7_mean = (COALESCE(lag_1, 0) + COALESCE(lag_2, 0) + 
+                               COALESCE(lag_3, 0) + COALESCE(lag_7, 0)) / 
+                NULLIF(
+                    (CASE WHEN lag_1 IS NOT NULL THEN 1 ELSE 0 END) +
+                    (CASE WHEN lag_2 IS NOT NULL THEN 1 ELSE 0 END) +
+                    (CASE WHEN lag_3 IS NOT NULL THEN 1 ELSE 0 END) +
+                    (CASE WHEN lag_7 IS NOT NULL THEN 1 ELSE 0 END), 0
+                )
+            WHERE lag_1 IS NOT NULL
+        """)
+        r7 = cur.rowcount
+
+        # Fix roll_3_std: stddev of lag_1, lag_2, lag_3
+        # PostgreSQL doesn't have array stddev inline, so compute manually:
+        # std = sqrt(mean(x²) - mean(x)²)
+        cur.execute("""
+            UPDATE daily_features
+            SET roll_3_std = SQRT(
+                GREATEST(0,
+                    (COALESCE(lag_1*lag_1, 0) + COALESCE(lag_2*lag_2, 0) + COALESCE(lag_3*lag_3, 0)) /
+                    NULLIF((CASE WHEN lag_1 IS NOT NULL THEN 1 ELSE 0 END) +
+                           (CASE WHEN lag_2 IS NOT NULL THEN 1 ELSE 0 END) +
+                           (CASE WHEN lag_3 IS NOT NULL THEN 1 ELSE 0 END), 0)
+                    -
+                    POWER(
+                        (COALESCE(lag_1, 0) + COALESCE(lag_2, 0) + COALESCE(lag_3, 0)) /
+                        NULLIF((CASE WHEN lag_1 IS NOT NULL THEN 1 ELSE 0 END) +
+                               (CASE WHEN lag_2 IS NOT NULL THEN 1 ELSE 0 END) +
+                               (CASE WHEN lag_3 IS NOT NULL THEN 1 ELSE 0 END), 0),
+                    2)
+                )
+            )
+            WHERE lag_1 IS NOT NULL
+        """)
+        r3s = cur.rowcount
+
         conn.commit()
-        print(f"  Fixed roll_3_mean for {fixed:,} rows (now uses lag_1+lag_2+lag_3)")
+        print(f"  Fixed roll_3_mean: {r3:,} rows")
+        print(f"  Fixed roll_7_mean: {r7:,} rows")
+        print(f"  Fixed roll_3_std:  {r3s:,} rows")
+        print(f"  All rolling features now use only past values (no leakage)")
 
 
 def main():

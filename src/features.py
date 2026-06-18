@@ -84,12 +84,14 @@ def add_lag_features(daily, target_col, lags=[1, 2, 3, 7]):
 def add_rolling_features(daily, target_col, windows=[3, 7]):
     """
     Add rolling mean and std for the target column.
-    roll_3_mean = average of last 3 days.
+    IMPORTANT: Shift by 1 day BEFORE rolling to prevent data leakage.
+    Without shift, roll_3_mean includes today's value (the prediction target).
     """
+    shifted = daily[target_col].shift(1)  # exclude current day
     for w in windows:
-        daily[f"roll_{w}_mean"] = daily[target_col].rolling(w).mean()
+        daily[f"roll_{w}_mean"] = shifted.rolling(w).mean()
     # Only add std for shortest window (volatility indicator)
-    daily["roll_3_std"] = daily[target_col].rolling(3).std()
+    daily["roll_3_std"] = shifted.rolling(3).std()
     return daily
 
 

@@ -5,10 +5,9 @@ Replaces Open-Meteo's bad data with satellite-quality weather.
 import psycopg2
 import pandas as pd
 
-DB_CONFIG = {
-    "dbname": "indiaaq", "user": "postgres",
-    "password": "8765", "host": "localhost", "port": "5432"
-}
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG
 
 def main():
     nasa = pd.read_csv("data/weather_nasa_power.csv")

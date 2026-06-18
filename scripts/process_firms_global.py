@@ -7,10 +7,9 @@ import numpy as np
 import pandas as pd
 import psycopg2
 
-DB_CONFIG = {
-    "dbname": "indiaaq", "user": "postgres",
-    "password": "8765", "host": "localhost", "port": "5432"
-}
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG
 
 RADIUS_KM = 100
 

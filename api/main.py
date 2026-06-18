@@ -1,8 +1,8 @@
 """
-IndiaAQ Intelligence - Prediction API
+Global AQ Intelligence — Prediction API
 
 FastAPI endpoint that serves PM2.5 predictions using
-the trained GradientBoosting model (v3 + NASA weather).
+the trained GradientBoosting v5 per-country models.
 
 Modes:
     1. /predict        - Manual: pass features directly
@@ -12,6 +12,7 @@ Run:
     uvicorn api.main:app --reload
 """
 
+import json
 import os
 import sys
 import joblib
@@ -20,27 +21,21 @@ import pandas as pd
 from datetime import date, datetime
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from sqlalchemy import create_engine, text
 
-# Model & Config 
+# Import shared config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG, MODEL_DIR
 
-MODEL_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "models", "gb_pm25_v3_nasa_weather.pkl"
-)
+# ─── Config ───────────────────────────────────────────────
+DB_URL = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}"
 
-DB_URL = "postgresql://postgres:8765@localhost:5432/indiaaq"
-
-# Feature order must match training exactly
-FEATURE_NAMES = [
-    "month", "day_of_week", "is_weekend", "day_of_year",
-    "lag_1", "lag_2", "lag_3", "lag_7",
-    "temperature", "humidity", "wind_speed",
-    "no2_value", "co_value", "o3_value", "so2_value",
-]
+COUNTRIES = ["IN", "US", "GB", "AU"]
+DEFAULT_COUNTRY = "IN"
 
 # NAQI breakpoints for PM2.5 (µg/m³)
 NAQI_BREAKPOINTS = [
@@ -147,22 +142,34 @@ model = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load model on startup, cleanup on shutdown."""
-    global model
-    if not os.path.exists(MODEL_PATH):
-        raise RuntimeError(f"Model not found at {MODEL_PATH}")
-    model = joblib.load(MODEL_PATH)
-    print(f"Model loaded: {type(model).__name__} ({len(FEATURE_NAMES)} features)")
+    """Load all v5 per-country models on startup."""
+    global models, feature_lists
+    models = {}
+    feature_lists = {}
+    for cc in COUNTRIES:
+        model_path = os.path.join(MODEL_DIR, f"{cc}_pm25_gbr.pkl")
+        meta_path = os.path.join(MODEL_DIR, f"{cc}_pm25_meta.json")
+        if os.path.exists(model_path):
+            models[cc] = joblib.load(model_path)
+            if os.path.exists(meta_path):
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                feature_lists[cc] = meta.get("features", FEATURE_NAMES)
+            else:
+                feature_lists[cc] = FEATURE_NAMES
+            print(f"  ✅ {cc} model loaded ({len(feature_lists[cc])} features)")
+        else:
+            print(f"  ⚠️ {cc} model not found at {model_path}")
     yield
-    model = None
+    models = {}
 
 
 # FastAPI App 
 
 app = FastAPI(
-    title="IndiaAQ Prediction API",
-    description="PM2.5 air quality predictions for 478 Indian monitoring stations",
-    version="1.0.0",
+    title="Global AQ Intelligence API",
+    description="PM2.5 air quality predictions for 4 countries (IN, US, GB, AU)",
+    version="5.0.0",
     lifespan=lifespan,
 )
 
@@ -179,9 +186,10 @@ app.add_middleware(
 def root():
     """Health check endpoint."""
     return {
-        "service": "IndiaAQ Prediction API",
+        "service": "Global AQ Intelligence API",
         "status": "running",
-        "model": "GradientBoosting v3 (R²=0.71, MAE=17 µg/m³)",
+        "models_loaded": list(models.keys()),
+        "version": "v5 (per-country GBR)",
         "endpoints": ["/predict", "/predict/auto", "/docs"],
     }
 
@@ -192,17 +200,22 @@ def predict_manual(request: ManualPredictRequest):
     Predict PM2.5 with manually provided features.
     Pass all 15 feature values in the request body.
     """
-    features = [getattr(request, name) for name in FEATURE_NAMES]
-    feature_df = pd.DataFrame([features], columns=FEATURE_NAMES)
+    cc = DEFAULT_COUNTRY
+    if cc not in models:
+        raise HTTPException(status_code=503, detail=f"No model loaded for {cc}")
 
-    prediction = float(model.predict(feature_df)[0])
+    feat_names = feature_lists.get(cc, FEATURE_NAMES)
+    features = [getattr(request, name, 0) for name in feat_names]
+    feature_df = pd.DataFrame([features], columns=feat_names)
+
+    prediction = float(models[cc].predict(feature_df)[0])
     prediction = max(0.0, round(prediction, 2))
 
     return PredictionResponse(
         predicted_pm25=prediction,
         naqi_category=classify_naqi(prediction),
-        confidence_note="Model: GradientBoosting v3, R²=0.71, MAE=17 µg/m³",
-        features_used=dict(zip(FEATURE_NAMES, features)),
+        confidence_note=f"Model: GradientBoosting v5 ({cc})",
+        features_used=dict(zip(feat_names, features)),
     )
 
 
@@ -212,17 +225,27 @@ def predict_auto(request: AutoPredictRequest):
     Predict PM2.5 automatically.
     Pass station_id and date — API fetches features from PostgreSQL.
     """
-    features_dict = fetch_features_from_db(request.station_id, request.target_date)
-    features = [features_dict[name] for name in FEATURE_NAMES]
-    feature_df = pd.DataFrame([features], columns=FEATURE_NAMES)
+    # Look up station country
+    engine = get_db_engine()
+    cq = pd.read_sql(text("SELECT country_code FROM stations WHERE id = :sid"),
+                     engine, params={"sid": request.station_id})
+    cc = cq.iloc[0]["country_code"] if not cq.empty else DEFAULT_COUNTRY
 
-    prediction = float(model.predict(feature_df)[0])
+    if cc not in models:
+        raise HTTPException(status_code=503, detail=f"No model loaded for {cc}")
+
+    feat_names = feature_lists.get(cc, FEATURE_NAMES)
+    features_dict = fetch_features_from_db(request.station_id, request.target_date)
+    features = [features_dict.get(name, 0) for name in feat_names]
+    feature_df = pd.DataFrame([features], columns=feat_names)
+
+    prediction = float(models[cc].predict(feature_df)[0])
     prediction = max(0.0, round(prediction, 2))
 
     return PredictionResponse(
         predicted_pm25=prediction,
         naqi_category=classify_naqi(prediction),
-        confidence_note="Model: GradientBoosting v3, R²=0.71, MAE=17 µg/m³",
+        confidence_note=f"Model: GradientBoosting v5 ({cc})",
         features_used=features_dict,
     )
 

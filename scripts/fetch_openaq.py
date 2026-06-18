@@ -41,13 +41,9 @@ DATE_FROM = "2021-01-01"
 RATE_LIMIT_SLEEP = 0.25
 CHECKPOINT_DIR = os.path.join(os.path.dirname(__file__), ".checkpoints")
 
-DB_CONFIG = {
-    "dbname": "indiaaq",
-    "user": "postgres",
-    "password": "8765",
-    "host": "localhost",
-    "port": 5432,
-}
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG
 
 
 def get_headers():

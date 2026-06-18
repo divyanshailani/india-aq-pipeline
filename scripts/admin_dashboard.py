@@ -1,13 +1,13 @@
 """
-Global AQ Intelligence — Admin Dashboard
-==========================================
-Local admin UI for managing the prediction pipeline.
+Global AQ Intelligence — Admin Control Panel
+==============================================
+Local admin UI for the full data pipeline.
 
-Features:
-  - Run Pipeline (one-click: fetch → validate → predict)
-  - View live accuracy metrics
-  - Deploy to Vercel (commit to GitHub)
-  - View run history
+4-Step Workflow:
+  STEP 1: Fetch Latest Data (OpenAQ + NASA POWER)
+  STEP 2: Run 30-Day Predictions
+  STEP 3: Push to GitHub → Vercel auto-deploys
+  STEP 4: Retrain Models (weekly, with R² guard)
 
 Usage:
     python scripts/admin_dashboard.py
@@ -16,50 +16,67 @@ Usage:
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import time
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from typing import Optional
 
 import psycopg2
+import psycopg2.extras
 
-# Try importing FastAPI
 try:
     from fastapi import FastAPI, BackgroundTasks
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse, JSONResponse
-    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
     import uvicorn
 except ImportError:
-    print("Installing FastAPI + uvicorn...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "fastapi", "uvicorn[standard]", "-q"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install",
+                           "fastapi", "uvicorn[standard]", "-q"])
     from fastapi import FastAPI, BackgroundTasks
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse, JSONResponse
-    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
     import uvicorn
 
-DB_CONFIG = {
-    "dbname": "indiaaq",
-    "user": "postgres",
-    "password": "8765",
-    "host": "localhost",
-    "port": 5432,
-}
+# ─── Config ──────────────────────────────────────────────────
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.config import DB_CONFIG, SCRIPTS_DIR, SITE_DATA_DIR, FRONTEND_REPO, MODEL_DIR
 
-SITE_DATA = os.path.join(os.path.dirname(__file__), "..", "data", "site_data")
-SITE_REPO = "/Users/divyanshailani/Desktop/global-aq-intelligence"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SITE_DATA = SITE_DATA_DIR
+SITE_REPO = FRONTEND_REPO
+
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")  # optional auth token
 
 app = FastAPI(title="Global AQ Admin")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware,
+                   allow_origins=["http://localhost:8050", "http://127.0.0.1:8050"],
+                   allow_methods=["*"], allow_headers=["*"])
 
-# ─── Pipeline state ────
-pipeline_status = {"running": False, "last_log": "", "last_result": None}
+# ─── Live pipeline state ─────────────────────────────────────
+pipeline_state = {
+    "running": False,
+    "step": None,        # "fetch" | "predict" | "deploy" | "retrain"
+    "logs": [],
+    "result": None,      # "success" | "error"
+    "started_at": None,
+}
 
 
 def get_db():
     return psycopg2.connect(**DB_CONFIG)
 
+
+def add_log(msg: str):
+    ts = datetime.now().strftime("%H:%M:%S")
+    pipeline_state["logs"].append(f"[{ts}] {msg}")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  API ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
 async def admin_page():
@@ -68,516 +85,751 @@ async def admin_page():
 
 @app.get("/api/status")
 async def get_status():
-    conn = get_db()
-    cur = conn.cursor()
-
-    # Last run
-    cur.execute("""
-        SELECT run_id, run_date, predictions_made, validations_done, 
-               live_mae, live_r2, status
-        FROM pipeline_runs ORDER BY run_date DESC LIMIT 5
-    """)
-    runs = []
-    for r in cur.fetchall():
-        runs.append({
-            "run_id": str(r[0])[:8],
-            "date": str(r[1]),
-            "predictions": r[2],
-            "validations": r[3],
-            "live_mae": r[4],
-            "live_r2": r[5],
-            "status": r[6],
-        })
-
-    # Data stats
-    cur.execute("""
-        SELECT s.country_code, COUNT(*), MAX(r.datetime_utc)::date
-        FROM raw_measurements r JOIN stations s ON r.station_id = s.id
-        GROUP BY s.country_code ORDER BY s.country_code
-    """)
-    data_stats = {}
-    for r in cur.fetchall():
-        data_stats[r[0]] = {
-            "rows": r[1],
-            "last_date": str(r[2]),
-            "gap_days": (date.today() - r[2]).days
-        }
-
-    # Prediction stats
-    cur.execute("""
-        SELECT country_code, COUNT(*), 
-               COUNT(actual_value) as validated,
-               AVG(ABS(error)) FILTER (WHERE error IS NOT NULL) as mae
-        FROM prediction_log
-        GROUP BY country_code
-    """)
-    pred_stats = {}
-    for r in cur.fetchall():
-        pred_stats[r[0]] = {
-            "total": r[1],
-            "validated": r[2],
-            "live_mae": round(float(r[3]), 2) if r[3] else None,
-        }
-
-    conn.close()
-
-    return {
-        "pipeline_running": pipeline_status["running"],
-        "runs": runs,
-        "data_stats": data_stats,
-        "prediction_stats": pred_stats,
-    }
-
-
-@app.post("/api/run-pipeline")
-async def run_pipeline(background_tasks: BackgroundTasks):
-    if pipeline_status["running"]:
-        return {"error": "Pipeline already running"}
-
-    pipeline_status["running"] = True
-    pipeline_status["last_log"] = "Starting..."
-
-    background_tasks.add_task(_run_pipeline_bg)
-    return {"status": "started"}
-
-
-def _run_pipeline_bg():
+    """Return full system status: data gaps, model info, run history."""
     try:
-        script = os.path.join(os.path.dirname(__file__), "predict_pipeline.py")
-        result = subprocess.run(
-            [sys.executable, script, "--skip-fetch"],
-            capture_output=True, text=True, timeout=600,
-        )
-        pipeline_status["last_log"] = result.stdout + result.stderr
-        pipeline_status["last_result"] = "success" if result.returncode == 0 else "error"
-    except Exception as e:
-        pipeline_status["last_log"] = str(e)
-        pipeline_status["last_result"] = "error"
-    finally:
-        pipeline_status["running"] = False
+        conn = get_db()
+        cur = conn.cursor()
 
+        # ── Data gaps per country ──
+        cur.execute("""
+            SELECT s.country_code,
+                   COUNT(DISTINCT r.station_id) as stations,
+                   COUNT(*) as rows,
+                   MAX(r.datetime_utc)::date as last_date
+            FROM raw_measurements r
+            JOIN stations s ON r.station_id = s.id
+            WHERE r.parameter = 'pm25'
+            GROUP BY s.country_code
+            ORDER BY s.country_code
+        """)
+        data_stats = {}
+        for r in cur.fetchall():
+            gap = (date.today() - r[3]).days if r[3] else None
+            data_stats[r[0]] = {
+                "stations": r[1],
+                "rows": r[2],
+                "last_date": str(r[3]) if r[3] else None,
+                "gap_days": gap,
+            }
 
-@app.get("/api/pipeline-log")
-async def get_pipeline_log():
-    return {
-        "running": pipeline_status["running"],
-        "log": pipeline_status["last_log"],
-        "result": pipeline_status["last_result"],
-    }
+        # ── Recent pipeline runs ──
+        cur.execute("""
+            SELECT run_id, run_date, predictions_made, validations_done,
+                   live_mae, live_r2, status
+            FROM pipeline_runs
+            ORDER BY run_date DESC LIMIT 10
+        """)
+        runs = []
+        for r in cur.fetchall():
+            runs.append({
+                "run_id": str(r[0])[:8],
+                "date": str(r[1]),
+                "predictions": r[2],
+                "validations": r[3],
+                "live_mae": round(float(r[4]), 2) if r[4] else None,
+                "live_r2": round(float(r[5]), 4) if r[5] else None,
+                "status": r[6],
+            })
 
+        # ── Model metadata from JSON ──
+        models = {}
+        meta_file = os.path.join(MODEL_DIR, "all_models_meta.json")
+        if os.path.exists(meta_file):
+            with open(meta_file) as f:
+                models = json.load(f)
 
-@app.post("/api/deploy")
-async def deploy_to_vercel():
-    """Copy predictions to site repo and commit."""
-    try:
-        # Copy data files
-        data_dir = os.path.join(SITE_REPO, "public", "data")
-        os.makedirs(data_dir, exist_ok=True)
+        # ── Last retrain date ──
+        last_retrain = None
+        for cc in ["IN", "US", "GB", "AU"]:
+            pkl = os.path.join(MODEL_DIR, f"{cc}_pm25_gbr.pkl")
+            if os.path.exists(pkl):
+                mtime = datetime.fromtimestamp(os.path.getmtime(pkl))
+                if last_retrain is None or mtime > last_retrain:
+                    last_retrain = mtime
 
-        for f in os.listdir(SITE_DATA):
-            if f.endswith(".json"):
-                src = os.path.join(SITE_DATA, f)
-                dst = os.path.join(data_dir, f)
-                with open(src) as sf:
-                    data = sf.read()
-                with open(dst, "w") as df:
-                    df.write(data)
+        # ── Site data freshness ──
+        site_meta_path = os.path.join(SITE_DATA, "model_meta.json")
+        site_generated = None
+        if os.path.exists(site_meta_path):
+            with open(site_meta_path) as f:
+                sm = json.load(f)
+                site_generated = sm.get("generated_at")
 
-        # Git commit and push
-        today = date.today().isoformat()
-        result = subprocess.run(
-            ["git", "add", "-A"],
-            cwd=SITE_REPO, capture_output=True, text=True,
-        )
-        result = subprocess.run(
-            ["git", "commit", "-m", f"Update predictions [{today}]"],
-            cwd=SITE_REPO, capture_output=True, text=True,
-        )
-        push_result = subprocess.run(
-            ["git", "push"],
-            cwd=SITE_REPO, capture_output=True, text=True,
-        )
+        conn.close()
 
         return {
-            "status": "deployed",
-            "commit_msg": f"Update predictions [{today}]",
-            "push": push_result.stdout + push_result.stderr,
+            "data_stats": data_stats,
+            "runs": runs,
+            "models": models,
+            "last_retrain": last_retrain.isoformat() if last_retrain else None,
+            "days_since_retrain": (datetime.now() - last_retrain).days if last_retrain else None,
+            "site_generated": site_generated,
+            "pipeline": {
+                "running": pipeline_state["running"],
+                "step": pipeline_state["step"],
+                "result": pipeline_state["result"],
+            },
         }
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        return {"error": str(e)}
 
 
-# ─── Admin HTML ───────────────────────────────────────────
-ADMIN_HTML = """
-<!DOCTYPE html>
+@app.get("/api/logs")
+async def get_logs():
+    """Return live pipeline logs."""
+    return {
+        "running": pipeline_state["running"],
+        "step": pipeline_state["step"],
+        "logs": pipeline_state["logs"][-200:],
+        "result": pipeline_state["result"],
+    }
+
+
+# ─── STEP 1: Fetch Data ──────────────────────────────────────
+
+@app.post("/api/fetch")
+async def fetch_data(background_tasks: BackgroundTasks):
+    if pipeline_state["running"]:
+        return {"error": "Pipeline already running"}
+    pipeline_state["running"] = True
+    pipeline_state["step"] = "fetch"
+    pipeline_state["logs"] = []
+    pipeline_state["result"] = None
+    pipeline_state["started_at"] = datetime.now().isoformat()
+    background_tasks.add_task(_run_fetch)
+    return {"status": "started", "step": "fetch"}
+
+
+def _run_fetch():
+    try:
+        add_log("═══ STEP 1: FETCH LATEST DATA ═══")
+
+        # Fetch OpenAQ for each country
+        for cc in ["IN", "US", "GB", "AU"]:
+            add_log(f"Fetching OpenAQ → {cc}...")
+            try:
+                result = subprocess.run(
+                    [sys.executable, os.path.join(SCRIPTS_DIR, "fetch_openaq.py"),
+                     "--country", cc],
+                    capture_output=True, text=True, timeout=300,
+                    cwd=BASE_DIR,
+                )
+                for line in result.stdout.strip().split("\n")[-5:]:
+                    if line.strip():
+                        add_log(f"  {cc}: {line.strip()}")
+                if result.returncode != 0 and result.stderr:
+                    add_log(f"  ⚠️ {cc}: {result.stderr.strip()[:200]}")
+            except subprocess.TimeoutExpired:
+                add_log(f"  ⏰ {cc}: Timeout (300s)")
+            except Exception as e:
+                add_log(f"  ❌ {cc}: {str(e)[:200]}")
+
+        # Fetch NASA POWER weather
+        add_log("Fetching NASA POWER weather...")
+        try:
+            result = subprocess.run(
+                [sys.executable, os.path.join(SCRIPTS_DIR, "fetch_nasa_global.py")],
+                capture_output=True, text=True, timeout=600,
+                cwd=BASE_DIR,
+            )
+            for line in result.stdout.strip().split("\n")[-3:]:
+                if line.strip():
+                    add_log(f"  NASA: {line.strip()}")
+        except Exception as e:
+            add_log(f"  ⚠️ NASA POWER: {str(e)[:200]}")
+
+        # Run ETL
+        add_log("Running ETL pipeline (clean → features)...")
+        try:
+            result = subprocess.run(
+                [sys.executable, os.path.join(SCRIPTS_DIR, "run_daily_etl.py")],
+                capture_output=True, text=True, timeout=600,
+                cwd=BASE_DIR,
+            )
+            for line in result.stdout.strip().split("\n")[-5:]:
+                if line.strip():
+                    add_log(f"  ETL: {line.strip()}")
+        except Exception as e:
+            add_log(f"  ⚠️ ETL: {str(e)[:200]}")
+
+        add_log("✅ FETCH COMPLETE")
+        pipeline_state["result"] = "success"
+    except Exception as e:
+        add_log(f"❌ FETCH FAILED: {e}")
+        pipeline_state["result"] = "error"
+    finally:
+        pipeline_state["running"] = False
+
+
+# ─── STEP 2: Run Predictions ─────────────────────────────────
+
+@app.post("/api/predict")
+async def run_predict(background_tasks: BackgroundTasks):
+    if pipeline_state["running"]:
+        return {"error": "Pipeline already running"}
+    pipeline_state["running"] = True
+    pipeline_state["step"] = "predict"
+    pipeline_state["logs"] = []
+    pipeline_state["result"] = None
+    pipeline_state["started_at"] = datetime.now().isoformat()
+    background_tasks.add_task(_run_predict)
+    return {"status": "started", "step": "predict"}
+
+
+def _run_predict():
+    try:
+        add_log("═══ STEP 2: RUN 30-DAY PREDICTIONS ═══")
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "predict_pipeline.py"),
+             "--skip-fetch"],
+            capture_output=True, text=True, timeout=600,
+            cwd=BASE_DIR,
+        )
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                add_log(line.strip())
+
+        if result.returncode == 0:
+            add_log("✅ PREDICTIONS COMPLETE")
+
+            # Copy to frontend repo
+            add_log("Copying JSON to frontend repo...")
+            data_dir = os.path.join(SITE_REPO, "public", "data")
+            os.makedirs(data_dir, exist_ok=True)
+            copied = 0
+            for f in os.listdir(SITE_DATA):
+                if f.endswith(".json"):
+                    shutil.copy2(os.path.join(SITE_DATA, f),
+                                 os.path.join(data_dir, f))
+                    copied += 1
+            add_log(f"  Copied {copied} JSON files → {data_dir}")
+            pipeline_state["result"] = "success"
+        else:
+            add_log(f"❌ Pipeline error: {result.stderr[:500]}")
+            pipeline_state["result"] = "error"
+    except Exception as e:
+        add_log(f"❌ PREDICT FAILED: {e}")
+        pipeline_state["result"] = "error"
+    finally:
+        pipeline_state["running"] = False
+
+
+# ─── STEP 3: Deploy to Vercel ────────────────────────────────
+
+@app.post("/api/deploy")
+async def deploy(background_tasks: BackgroundTasks):
+    if pipeline_state["running"]:
+        return {"error": "Pipeline already running"}
+    pipeline_state["running"] = True
+    pipeline_state["step"] = "deploy"
+    pipeline_state["logs"] = []
+    pipeline_state["result"] = None
+    pipeline_state["started_at"] = datetime.now().isoformat()
+    background_tasks.add_task(_run_deploy)
+    return {"status": "started", "step": "deploy"}
+
+
+def _run_deploy():
+    try:
+        add_log("═══ STEP 3: DEPLOY TO VERCEL ═══")
+        today = date.today().isoformat()
+
+        # Git add
+        add_log("git add -A...")
+        subprocess.run(["git", "add", "-A"], cwd=SITE_REPO,
+                        capture_output=True, text=True)
+
+        # Git commit
+        msg = f"data: update predictions [{today}]"
+        add_log(f"git commit -m \"{msg}\"...")
+        result = subprocess.run(
+            ["git", "commit", "-m", msg],
+            cwd=SITE_REPO, capture_output=True, text=True,
+        )
+        add_log(result.stdout.strip() if result.stdout.strip() else
+                result.stderr.strip() if result.stderr.strip() else
+                "Nothing to commit")
+
+        # Git push
+        add_log("git push origin main...")
+        result = subprocess.run(
+            ["git", "push", "origin", "main"],
+            cwd=SITE_REPO, capture_output=True, text=True, timeout=60,
+        )
+        output = (result.stdout + result.stderr).strip()
+        for line in output.split("\n"):
+            if line.strip():
+                add_log(f"  {line.strip()}")
+
+        if result.returncode == 0:
+            add_log("✅ PUSHED — Vercel will auto-deploy in ~30s")
+            pipeline_state["result"] = "success"
+        else:
+            add_log(f"⚠️ Push may have failed. Check output above.")
+            pipeline_state["result"] = "error"
+    except Exception as e:
+        add_log(f"❌ DEPLOY FAILED: {e}")
+        pipeline_state["result"] = "error"
+    finally:
+        pipeline_state["running"] = False
+
+
+# ─── STEP 4: Retrain Models ──────────────────────────────────
+
+@app.post("/api/retrain")
+async def retrain(background_tasks: BackgroundTasks):
+    if pipeline_state["running"]:
+        return {"error": "Pipeline already running"}
+    pipeline_state["running"] = True
+    pipeline_state["step"] = "retrain"
+    pipeline_state["logs"] = []
+    pipeline_state["result"] = None
+    pipeline_state["started_at"] = datetime.now().isoformat()
+    background_tasks.add_task(_run_retrain)
+    return {"status": "started", "step": "retrain"}
+
+
+def _run_retrain():
+    try:
+        add_log("═══ STEP 4: RETRAIN MODELS ═══")
+        add_log("Running train_v5.py (per-country GBR)...")
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "train_v5.py")],
+            capture_output=True, text=True, timeout=1200,
+            cwd=BASE_DIR,
+        )
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                add_log(line.strip())
+
+        if result.returncode == 0:
+            add_log("✅ RETRAIN COMPLETE — new models saved to models/v5/")
+            pipeline_state["result"] = "success"
+        else:
+            add_log(f"❌ Train error: {result.stderr[:500]}")
+            pipeline_state["result"] = "error"
+    except Exception as e:
+        add_log(f"❌ RETRAIN FAILED: {e}")
+        pipeline_state["result"] = "error"
+    finally:
+        pipeline_state["running"] = False
+
+
+# ─── Full Pipeline (all steps) ───────────────────────────────
+
+@app.post("/api/run-all")
+async def run_all(background_tasks: BackgroundTasks):
+    if pipeline_state["running"]:
+        return {"error": "Pipeline already running"}
+    pipeline_state["running"] = True
+    pipeline_state["step"] = "full"
+    pipeline_state["logs"] = []
+    pipeline_state["result"] = None
+    pipeline_state["started_at"] = datetime.now().isoformat()
+    background_tasks.add_task(_run_all)
+    return {"status": "started", "step": "full"}
+
+
+def _run_all():
+    try:
+        add_log("═══ FULL PIPELINE: FETCH → PREDICT → DEPLOY ═══")
+        _run_fetch()
+        pipeline_state["running"] = True
+        _run_predict()
+        pipeline_state["running"] = True
+        _run_deploy()
+        add_log("═══ FULL PIPELINE COMPLETE ═══")
+    except Exception as e:
+        add_log(f"❌ FULL PIPELINE FAILED: {e}")
+        pipeline_state["result"] = "error"
+    finally:
+        pipeline_state["running"] = False
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ADMIN HTML
+# ═══════════════════════════════════════════════════════════════
+ADMIN_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Global AQ Intelligence — Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
+        :root {
+            --bg: #0c0e14;
+            --card: rgba(255,255,255,0.025);
+            --card-border: rgba(255,255,255,0.06);
+            --text: #e0e4ef;
+            --text-muted: #6b7280;
+            --teal: #4fb8b0;
+            --purple: #8b7eb8;
+            --amber: #d4a24c;
+            --red: #ef4444;
+            --green: #22c55e;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
-            color: #e0e0e0;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
         }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
+
+        .container { max-width: 1280px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+        /* ── Header ── */
+        .header { margin-bottom: 2.5rem; }
+        .header h1 {
+            font-size: 1.75rem; font-weight: 700;
+            background: linear-gradient(135deg, var(--teal), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
-        
-        h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
+        .header-meta {
+            display: flex; gap: 2rem; margin-top: 0.5rem;
+            font-size: 0.8rem; color: var(--text-muted);
         }
-        
-        .subtitle {
-            color: #888;
-            font-size: 0.9rem;
-            margin-bottom: 2rem;
+        .header-meta span { display: flex; align-items: center; gap: 0.35rem; }
+
+        /* ── Grid ── */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+        @media (max-width: 900px) {
+            .grid-2, .grid-4 { grid-template-columns: 1fr; }
         }
-        
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        
+
+        /* ── Cards ── */
         .card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 1.5rem;
-            backdrop-filter: blur(10px);
-            transition: transform 0.2s, border-color 0.2s;
+            background: var(--card); border: 1px solid var(--card-border);
+            border-radius: 14px; padding: 1.25rem;
+            backdrop-filter: blur(8px);
         }
-        
-        .card:hover {
-            transform: translateY(-2px);
-            border-color: rgba(102, 126, 234, 0.3);
+        .card-title {
+            font-size: 0.7rem; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 1rem;
         }
-        
-        .card h3 {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 1rem;
+
+        /* ── Step buttons ── */
+        .step-card {
+            background: var(--card); border: 1px solid var(--card-border);
+            border-radius: 14px; padding: 1.25rem; text-align: center;
+            transition: all 0.25s;
         }
-        
+        .step-card:hover { border-color: rgba(79,184,176,0.3); transform: translateY(-2px); }
+        .step-num {
+            font-size: 0.65rem; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 0.5rem;
+        }
+        .step-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.35rem; }
+        .step-desc { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5; }
+
         .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 12px;
-            font-family: 'Inter', sans-serif;
-            font-size: 0.9rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            padding: 0.6rem 1.25rem; border: none; border-radius: 10px;
+            font-family: 'Inter', sans-serif; font-size: 0.8rem; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
         }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
+        .btn-teal { background: rgba(79,184,176,0.15); color: var(--teal); border: 1px solid rgba(79,184,176,0.3); }
+        .btn-teal:hover { background: rgba(79,184,176,0.25); box-shadow: 0 4px 20px rgba(79,184,176,0.15); }
+        .btn-purple { background: rgba(139,126,184,0.15); color: var(--purple); border: 1px solid rgba(139,126,184,0.3); }
+        .btn-purple:hover { background: rgba(139,126,184,0.25); box-shadow: 0 4px 20px rgba(139,126,184,0.15); }
+        .btn-amber { background: rgba(212,162,76,0.15); color: var(--amber); border: 1px solid rgba(212,162,76,0.3); }
+        .btn-amber:hover { background: rgba(212,162,76,0.25); box-shadow: 0 4px 20px rgba(212,162,76,0.15); }
+        .btn-green { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+        .btn-green:hover { background: rgba(34,197,94,0.25); box-shadow: 0 4px 20px rgba(34,197,94,0.15); }
+        .btn-full {
+            display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+            width: 100%; padding: 0.8rem 1.5rem; margin-top: 1rem;
+            border: 1px solid rgba(79,184,176,0.4); border-radius: 12px;
+            background: linear-gradient(135deg, rgba(79,184,176,0.12), rgba(139,126,184,0.08));
+            color: var(--teal); font-family: 'Inter'; font-size: 0.9rem; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
         }
-        
-        .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        .btn-full:hover { background: linear-gradient(135deg, rgba(79,184,176,0.2), rgba(139,126,184,0.15)); box-shadow: 0 6px 30px rgba(79,184,176,0.12); }
+        .btn:disabled, .btn-full:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+        /* ── Country stats ── */
+        .country-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0.6rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
         }
-        
-        .btn-success {
-            background: linear-gradient(135deg, #00b09b, #96c93d);
-            color: white;
-        }
-        
-        .btn-success:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 8px 25px rgba(0, 176, 155, 0.3);
-        }
-        
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none !important;
-        }
-        
-        .stat {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        
-        .stat:last-child { border-bottom: none; }
-        
-        .stat-label { color: #888; font-size: 0.85rem; }
-        
-        .stat-value {
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-        
-        .stat-value.green { color: #00b09b; }
-        .stat-value.yellow { color: #ffc107; }
-        .stat-value.red { color: #ff4757; }
-        .stat-value.blue { color: #667eea; }
-        
-        .tag {
-            display: inline-block;
-            padding: 0.2rem 0.6rem;
+        .country-row:last-child { border-bottom: none; }
+        .country-name { font-size: 0.85rem; font-weight: 500; }
+        .country-detail { font-size: 0.72rem; color: var(--text-muted); }
+        .gap-badge {
+            font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem;
             border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
         }
-        
-        .tag-green { background: rgba(0, 176, 155, 0.15); color: #00b09b; }
-        .tag-yellow { background: rgba(255, 193, 7, 0.15); color: #ffc107; }
-        .tag-blue { background: rgba(102, 126, 234, 0.15); color: #667eea; }
-        .tag-red { background: rgba(255, 71, 87, 0.15); color: #ff4757; }
-        
+        .gap-ok { background: rgba(34,197,94,0.12); color: var(--green); }
+        .gap-warn { background: rgba(212,162,76,0.12); color: var(--amber); }
+        .gap-bad { background: rgba(239,68,68,0.12); color: var(--red); }
+
+        /* ── Model cards ── */
+        .model-metric { display: flex; justify-content: space-between; padding: 0.4rem 0; }
+        .model-metric-label { font-size: 0.78rem; color: var(--text-muted); }
+        .model-metric-value { font-size: 0.85rem; font-weight: 600; }
+
+        /* ── Log box ── */
+        .log-container {
+            background: rgba(0,0,0,0.4); border: 1px solid var(--card-border);
+            border-radius: 12px; padding: 1rem; margin-top: 1.25rem;
+        }
+        .log-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        .log-title { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+        .log-status {
+            font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+        }
+        .log-running { background: rgba(79,184,176,0.15); color: var(--teal); animation: pulse 1.5s infinite; }
+        .log-success { background: rgba(34,197,94,0.15); color: var(--green); }
+        .log-error { background: rgba(239,68,68,0.15); color: var(--red); }
         .log-box {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            padding: 1rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.75rem;
-            color: #aaa;
-            max-height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            margin-top: 1rem;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+            color: #9ca3af; max-height: 350px; overflow-y: auto;
+            white-space: pre-wrap; line-height: 1.7;
         }
-        
-        .actions {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 2rem;
+        .log-box .success { color: var(--green); }
+        .log-box .error { color: var(--red); }
+
+        /* ── Run history table ── */
+        .table { width: 100%; border-collapse: collapse; }
+        .table th {
+            text-align: left; padding: 0.5rem 0.75rem;
+            font-size: 0.68rem; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.06em;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
         }
-        
-        .run-history {
-            width: 100%;
-            border-collapse: collapse;
+        .table td {
+            padding: 0.5rem 0.75rem; font-size: 0.8rem;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
         }
-        
-        .run-history th {
-            text-align: left;
-            padding: 0.5rem;
-            color: #888;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        .tag {
+            display: inline-block; padding: 0.15rem 0.5rem;
+            border-radius: 6px; font-size: 0.7rem; font-weight: 600;
         }
-        
-        .run-history td {
-            padding: 0.5rem;
-            font-size: 0.85rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-        }
-        
-        .spinner {
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .pulse {
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
+        .tag-green { background: rgba(34,197,94,0.12); color: var(--green); }
+        .tag-amber { background: rgba(212,162,76,0.12); color: var(--amber); }
+        .tag-red { background: rgba(239,68,68,0.12); color: var(--red); }
+
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.15); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.7s linear infinite; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔧 Global AQ Admin</h1>
-        <p class="subtitle">Manage predictions, validate accuracy, deploy to production</p>
-        
-        <div class="actions">
-            <button class="btn btn-primary" id="runBtn" onclick="runPipeline()">
-                ⚡ Run Pipeline
-            </button>
-            <button class="btn btn-success" id="deployBtn" onclick="deploy()">
-                🚀 Deploy to Vercel
-            </button>
-        </div>
-        
-        <div class="grid">
-            <!-- Data Health -->
-            <div class="card">
-                <h3>📊 Data Health</h3>
-                <div id="dataHealth">Loading...</div>
-            </div>
-            
-            <!-- Prediction Stats -->
-            <div class="card">
-                <h3>🎯 Prediction Stats</h3>
-                <div id="predStats">Loading...</div>
+        <!-- Header -->
+        <div class="header">
+            <h1>🔧 Global AQ Intelligence — Admin</h1>
+            <div class="header-meta">
+                <span id="lastRun">Last run: loading...</span>
+                <span id="siteAge">Site data: loading...</span>
+                <span id="retrainInfo">Retrain: loading...</span>
             </div>
         </div>
-        
-        <!-- Pipeline Log -->
-        <div class="card" id="logCard" style="display:none;">
-            <h3>📋 Pipeline Log</h3>
+
+        <!-- 4 Step Buttons -->
+        <div class="grid-4">
+            <div class="step-card">
+                <div class="step-num">Step 1</div>
+                <div class="step-title">📡 Fetch Data</div>
+                <div class="step-desc">OpenAQ + NASA POWER<br>weather for all 4 countries</div>
+                <button class="btn btn-teal" id="fetchBtn" onclick="runStep('fetch')">▶ Fetch</button>
+            </div>
+            <div class="step-card">
+                <div class="step-num">Step 2</div>
+                <div class="step-title">🧠 Predict</div>
+                <div class="step-desc">30-day chained forecast<br>validate old predictions</div>
+                <button class="btn btn-purple" id="predictBtn" onclick="runStep('predict')">▶ Predict</button>
+            </div>
+            <div class="step-card">
+                <div class="step-num">Step 3</div>
+                <div class="step-title">🚀 Deploy</div>
+                <div class="step-desc">Push JSON to GitHub<br>Vercel auto-deploys</div>
+                <button class="btn btn-green" id="deployBtn" onclick="runStep('deploy')">▶ Deploy</button>
+            </div>
+            <div class="step-card">
+                <div class="step-num">Weekly</div>
+                <div class="step-title">🔄 Retrain</div>
+                <div class="step-desc">Full model retrain<br>with R² guard</div>
+                <button class="btn btn-amber" id="retrainBtn" onclick="runStep('retrain')">▶ Retrain</button>
+            </div>
+        </div>
+
+        <!-- Full Pipeline Button -->
+        <button class="btn-full" id="fullBtn" onclick="runStep('run-all')">
+            ⚡ Run Full Pipeline (Fetch → Predict → Deploy)
+        </button>
+
+        <!-- Log Box -->
+        <div class="log-container" id="logContainer" style="display:none;">
+            <div class="log-header">
+                <span class="log-title">📋 Pipeline Log</span>
+                <span class="log-status" id="logStatus"></span>
+            </div>
             <div class="log-box" id="logBox"></div>
         </div>
-        
+
+        <!-- Data Health + Model Performance -->
+        <div class="grid-2" style="margin-top: 1.5rem;">
+            <div class="card">
+                <div class="card-title">📊 Data Health — PM2.5 Coverage</div>
+                <div id="dataHealth">Loading...</div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧠 Model Performance (v5)</div>
+                <div id="modelPerf">Loading...</div>
+            </div>
+        </div>
+
         <!-- Run History -->
-        <div class="card" style="margin-top: 1.5rem;">
-            <h3>📜 Run History</h3>
-            <table class="run-history" id="runHistory">
+        <div class="card" style="margin-top: 1.25rem;">
+            <div class="card-title">📜 Run History</div>
+            <table class="table">
                 <thead>
                     <tr>
-                        <th>Run ID</th>
-                        <th>Date</th>
-                        <th>Predictions</th>
-                        <th>Validated</th>
-                        <th>Live MAE</th>
-                        <th>Status</th>
+                        <th>Run</th><th>Date</th><th>Predictions</th>
+                        <th>Validated</th><th>Live MAE</th><th>Live R²</th><th>Status</th>
                     </tr>
                 </thead>
-                <tbody></tbody>
+                <tbody id="runHistory"></tbody>
             </table>
         </div>
     </div>
-    
+
     <script>
+        const FLAGS = {IN:'🇮🇳', US:'🇺🇸', GB:'🇬🇧', AU:'🇦🇺'};
+        const NAMES = {IN:'India', US:'United States', GB:'United Kingdom', AU:'Australia'};
+        let pollInterval = null;
+
         async function loadStatus() {
             try {
                 const res = await fetch('/api/status');
-                const data = await res.json();
-                
+                const d = await res.json();
+                if (d.error) { console.error(d.error); return; }
+
+                // Header meta
+                const lastRun = d.runs?.[0];
+                document.getElementById('lastRun').textContent =
+                    lastRun ? `Last run: ${lastRun.date}` : 'Last run: never';
+                document.getElementById('siteAge').textContent =
+                    d.site_generated ? `Site data: ${d.site_generated.slice(0,10)}` : 'Site data: —';
+                document.getElementById('retrainInfo').textContent =
+                    d.days_since_retrain != null
+                        ? `Retrain: ${d.days_since_retrain}d ago` + (d.days_since_retrain >= 7 ? ' ⚠️' : ' ✓')
+                        : 'Retrain: never';
+
                 // Data Health
-                let healthHtml = '';
-                const countries = {IN: '🇮🇳', US: '🇺🇸', GB: '🇬🇧', AU: '🇦🇺'};
-                for (const [cc, info] of Object.entries(data.data_stats || {})) {
-                    const gapClass = info.gap_days <= 1 ? 'green' : info.gap_days <= 7 ? 'yellow' : 'red';
-                    healthHtml += `
-                        <div class="stat">
-                            <span class="stat-label">${countries[cc] || cc} ${cc} — ${(info.rows/1e6).toFixed(1)}M rows</span>
-                            <span class="stat-value ${gapClass}">${info.gap_days}d ago</span>
-                        </div>`;
+                let dh = '';
+                for (const cc of ['IN','US','GB','AU']) {
+                    const s = d.data_stats?.[cc];
+                    if (!s) { dh += `<div class="country-row"><span class="country-name">${FLAGS[cc]} ${cc}</span><span class="gap-badge gap-bad">No data</span></div>`; continue; }
+                    const gapClass = s.gap_days <= 2 ? 'gap-ok' : s.gap_days <= 7 ? 'gap-warn' : 'gap-bad';
+                    const rows = s.rows > 1e6 ? (s.rows/1e6).toFixed(1)+'M' : s.rows > 1e3 ? (s.rows/1e3).toFixed(0)+'K' : s.rows;
+                    dh += `<div class="country-row">
+                        <div>
+                            <div class="country-name">${FLAGS[cc]} ${NAMES[cc]}</div>
+                            <div class="country-detail">${s.stations} stations · ${rows} rows · last: ${s.last_date}</div>
+                        </div>
+                        <span class="gap-badge ${gapClass}">${s.gap_days}d gap</span>
+                    </div>`;
                 }
-                document.getElementById('dataHealth').innerHTML = healthHtml || 'No data';
-                
-                // Prediction Stats
-                let predHtml = '';
-                for (const [cc, info] of Object.entries(data.prediction_stats || {})) {
-                    predHtml += `
-                        <div class="stat">
-                            <span class="stat-label">${countries[cc] || cc} ${cc} — ${info.total} preds, ${info.validated} validated</span>
-                            <span class="stat-value ${info.live_mae ? 'green' : 'blue'}">${info.live_mae ? info.live_mae + ' µg/m³' : 'pending'}</span>
-                        </div>`;
+                document.getElementById('dataHealth').innerHTML = dh || 'No data';
+
+                // Model Performance
+                let mp = '';
+                const models = d.models;
+                for (const cc of ['IN','US','GB','AU']) {
+                    const m = models?.[cc];
+                    const r2 = m?.test_r2 ?? m?.r2 ?? '—';
+                    const mae = m?.test_mae ?? m?.mae ?? '—';
+                    const r2Color = r2 >= 0.7 ? 'var(--green)' : r2 >= 0.5 ? 'var(--amber)' : 'var(--red)';
+                    mp += `<div class="country-row">
+                        <div>
+                            <div class="country-name">${FLAGS[cc]} ${NAMES[cc]}</div>
+                            <div class="country-detail">MAE: ${typeof mae === 'number' ? mae.toFixed(2) : mae} µg/m³</div>
+                        </div>
+                        <span style="font-size:0.9rem;font-weight:700;color:${r2Color}">R² ${typeof r2 === 'number' ? r2.toFixed(2) : r2}</span>
+                    </div>`;
                 }
-                document.getElementById('predStats').innerHTML = predHtml || 'No predictions yet';
-                
+                document.getElementById('modelPerf').innerHTML = mp || 'No model data';
+
                 // Run History
-                const tbody = document.querySelector('#runHistory tbody');
+                const tbody = document.getElementById('runHistory');
                 tbody.innerHTML = '';
-                for (const run of data.runs || []) {
-                    const statusTag = run.status === 'completed' 
-                        ? '<span class="tag tag-green">✓ Done</span>'
-                        : '<span class="tag tag-yellow">Running</span>';
-                    tbody.innerHTML += `
-                        <tr>
-                            <td>${run.run_id}</td>
-                            <td>${run.date}</td>
-                            <td>${run.predictions || '—'}</td>
-                            <td>${run.validations || '—'}</td>
-                            <td>${run.live_mae ? run.live_mae.toFixed(2) : '—'}</td>
-                            <td>${statusTag}</td>
-                        </tr>`;
+                for (const r of (d.runs || [])) {
+                    const tagClass = r.status === 'completed' ? 'tag-green' : r.status === 'running' ? 'tag-amber' : 'tag-red';
+                    const tagText = r.status === 'completed' ? '✓ Done' : r.status === 'running' ? '⏳ Running' : '✗ Error';
+                    tbody.innerHTML += `<tr>
+                        <td style="font-family:'JetBrains Mono';font-size:0.75rem;">${r.run_id}</td>
+                        <td>${r.date}</td>
+                        <td>${r.predictions?.toLocaleString() ?? '—'}</td>
+                        <td>${r.validations ?? '—'}</td>
+                        <td>${r.live_mae ?? '—'}</td>
+                        <td>${r.live_r2 ?? '—'}</td>
+                        <td><span class="tag ${tagClass}">${tagText}</span></td>
+                    </tr>`;
                 }
-                
-                // Button state
-                document.getElementById('runBtn').disabled = data.pipeline_running;
-                if (data.pipeline_running) {
-                    document.getElementById('runBtn').innerHTML = '<span class="spinner"></span> Running...';
-                }
-            } catch (e) {
-                console.error('Status error:', e);
-            }
+
+                // Button states
+                const running = d.pipeline?.running;
+                const btns = ['fetchBtn','predictBtn','deployBtn','retrainBtn','fullBtn'];
+                btns.forEach(id => { document.getElementById(id).disabled = running; });
+            } catch(e) { console.error('Status load error:', e); }
         }
-        
-        async function runPipeline() {
-            const btn = document.getElementById('runBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Running...';
-            document.getElementById('logCard').style.display = 'block';
-            document.getElementById('logBox').textContent = 'Starting pipeline...\\n';
-            
-            await fetch('/api/run-pipeline', {method: 'POST'});
-            
-            // Poll log
-            const pollLog = setInterval(async () => {
-                const res = await fetch('/api/pipeline-log');
+
+        async function runStep(step) {
+            const btns = ['fetchBtn','predictBtn','deployBtn','retrainBtn','fullBtn'];
+            btns.forEach(id => { document.getElementById(id).disabled = true; });
+
+            document.getElementById('logContainer').style.display = 'block';
+            document.getElementById('logBox').textContent = 'Starting...';
+            document.getElementById('logStatus').className = 'log-status log-running';
+            document.getElementById('logStatus').textContent = '⏳ Running';
+
+            await fetch(`/api/${step}`, {method: 'POST'});
+
+            // Poll logs
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(async () => {
+                const res = await fetch('/api/logs');
                 const data = await res.json();
-                document.getElementById('logBox').textContent = data.log;
+
+                let html = '';
+                for (const line of data.logs) {
+                    if (line.includes('✅')) html += `<span class="success">${line}</span>\\n`;
+                    else if (line.includes('❌')) html += `<span class="error">${line}</span>\\n`;
+                    else html += line + '\\n';
+                }
+                document.getElementById('logBox').innerHTML = html;
                 document.getElementById('logBox').scrollTop = 999999;
-                
+
                 if (!data.running) {
-                    clearInterval(pollLog);
-                    btn.disabled = false;
-                    btn.innerHTML = '⚡ Run Pipeline';
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    const status = document.getElementById('logStatus');
+                    if (data.result === 'success') {
+                        status.className = 'log-status log-success';
+                        status.textContent = '✅ Complete';
+                    } else {
+                        status.className = 'log-status log-error';
+                        status.textContent = '❌ Error';
+                    }
+                    btns.forEach(id => { document.getElementById(id).disabled = false; });
                     loadStatus();
                 }
-            }, 2000);
+            }, 1500);
         }
-        
-        async function deploy() {
-            const btn = document.getElementById('deployBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Deploying...';
-            
-            try {
-                const res = await fetch('/api/deploy', {method: 'POST'});
-                const data = await res.json();
-                
-                if (data.status === 'deployed') {
-                    alert('✅ Deployed!\\n\\n' + data.commit_msg + '\\n\\n' + data.push);
-                } else {
-                    alert('❌ Error: ' + (data.error || 'Unknown'));
-                }
-            } catch (e) {
-                alert('❌ Error: ' + e.message);
-            }
-            
-            btn.disabled = false;
-            btn.innerHTML = '🚀 Deploy to Vercel';
-        }
-        
-        // Auto-refresh every 10s
+
         loadStatus();
-        setInterval(loadStatus, 10000);
+        setInterval(loadStatus, 15000);
     </script>
 </body>
 </html>
@@ -585,8 +837,15 @@ ADMIN_HTML = """
 
 
 if __name__ == "__main__":
-    print("╔══════════════════════════════════════════════════╗")
-    print("║  Global AQ Intelligence — Admin Dashboard       ║")
-    print("║  http://localhost:8050                           ║")
-    print("╚══════════════════════════════════════════════════╝")
-    uvicorn.run(app, host="0.0.0.0", port=8050)
+    print()
+    print("  ╔══════════════════════════════════════════════════╗")
+    print("  ║  Global AQ Intelligence — Admin Control Panel   ║")
+    print("  ║  http://localhost:8050                           ║")
+    print("  ╠══════════════════════════════════════════════════╣")
+    print("  ║  STEP 1: Fetch Data   (OpenAQ + NASA POWER)     ║")
+    print("  ║  STEP 2: Predict      (30-day chained forecast) ║")
+    print("  ║  STEP 3: Deploy       (git push → Vercel)       ║")
+    print("  ║  STEP 4: Retrain      (weekly, R² guard)        ║")
+    print("  ╚══════════════════════════════════════════════════╝")
+    print()
+    uvicorn.run(app, host="127.0.0.1", port=8050)
