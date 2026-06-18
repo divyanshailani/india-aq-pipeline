@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-17T20:11:19.824526",
-  "live_mae": null,
-  "live_r2": null,
+  "generated_at": "2026-06-18T09:35:17.955938",
+  "live_mae": 5.8,
+  "live_r2": -1.4451,
   "training_metrics": {
     "IN": {
       "r2": 0.7718,

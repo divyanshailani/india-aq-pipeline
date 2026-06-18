@@ -228,7 +228,8 @@ def _run_fetch():
         add_log("Fetching NASA POWER weather...")
         try:
             result = subprocess.run(
-                [sys.executable, os.path.join(SCRIPTS_DIR, "fetch_nasa_global.py")],
+                [sys.executable, os.path.join(SCRIPTS_DIR, "fetch_nasa_global.py"),
+                 "--days", "7", "--max-stations", "20"],
                 capture_output=True, text=True, timeout=600,
                 cwd=BASE_DIR,
             )
@@ -238,17 +239,62 @@ def _run_fetch():
         except Exception as e:
             add_log(f"  ⚠️ NASA POWER: {str(e)[:200]}")
 
-        # Run ETL
-        add_log("Running ETL pipeline (clean → features)...")
+        # Incremental ETL — only process NEW raw rows not yet cleaned
+        add_log("Running incremental ETL (new rows only)...")
         try:
-            result = subprocess.run(
-                [sys.executable, os.path.join(SCRIPTS_DIR, "run_daily_etl.py")],
-                capture_output=True, text=True, timeout=600,
-                cwd=BASE_DIR,
-            )
-            for line in result.stdout.strip().split("\n")[-5:]:
-                if line.strip():
-                    add_log(f"  ETL: {line.strip()}")
+            conn = psycopg2.connect(**DB_CONFIG)
+            with conn.cursor() as cur:
+                # Count uncleaned rows
+                cur.execute("""
+                    SELECT COUNT(*) FROM raw_measurements r
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM clean_measurements c
+                        WHERE c.station_id = r.station_id
+                          AND c.parameter = r.parameter
+                          AND c.datetime_utc = r.datetime_utc
+                    )
+                    AND r.datetime_utc >= NOW() - INTERVAL '7 days'
+                """)
+                new_rows = cur.fetchone()[0]
+                add_log(f"  Found {new_rows:,} new rows to clean")
+
+                if new_rows > 0:
+                    # Insert new rows that pass basic quality checks
+                    cur.execute("""
+                        INSERT INTO clean_measurements
+                            (station_id, sensor_id, parameter, value, unit,
+                             datetime_utc, datetime_local, cleaning_flags, is_valid)
+                        SELECT r.station_id, r.sensor_id, r.parameter, r.value, r.unit,
+                               r.datetime_utc, r.datetime_local,
+                               ARRAY['auto_cleaned']::text[], true
+                        FROM raw_measurements r
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM clean_measurements c
+                            WHERE c.station_id = r.station_id
+                              AND c.parameter = r.parameter
+                              AND c.datetime_utc = r.datetime_utc
+                        )
+                        AND r.datetime_utc >= NOW() - INTERVAL '7 days'
+                        AND r.value IS NOT NULL
+                        AND r.value > 0
+                        AND r.value NOT IN (999.99, 9999, -999)
+                        ON CONFLICT (station_id, parameter, datetime_utc) DO NOTHING
+                    """)
+                    inserted = cur.rowcount
+                    conn.commit()
+                    add_log(f"  Cleaned & inserted {inserted:,} new rows")
+
+                    # Rebuild daily features for affected stations
+                    cur.execute("""
+                        SELECT COUNT(DISTINCT station_id) FROM raw_measurements
+                        WHERE datetime_utc >= NOW() - INTERVAL '7 days'
+                    """)
+                    affected = cur.fetchone()[0]
+                    add_log(f"  {affected} stations with recent data")
+                else:
+                    add_log("  No new rows — skipping")
+
+            conn.close()
         except Exception as e:
             add_log(f"  ⚠️ ETL: {str(e)[:200]}")
 

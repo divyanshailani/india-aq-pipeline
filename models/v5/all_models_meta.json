@@ -42,52 +42,52 @@
       "2026-06-17"
     ],
     "metrics": {
-      "train_r2": 0.9129,
-      "test_r2": 0.7718,
-      "test_mae": 8.52,
-      "test_rmse": 15.98,
-      "overfit_delta": 0.1411
+      "train_r2": 0.8503,
+      "test_r2": 0.6399,
+      "test_mae": 10.18,
+      "test_rmse": 20.07,
+      "overfit_delta": 0.2104
     },
     "top_features": [
       [
         "lag_1",
-        0.6481
-      ],
-      [
-        "roll_7_mean",
-        0.1521
-      ],
-      [
-        "roll_3_std",
-        0.0732
-      ],
-      [
-        "lag_2",
-        0.0292
-      ],
-      [
-        "day_of_year",
-        0.0143
-      ],
-      [
-        "nasa_temperature",
-        0.013
-      ],
-      [
-        "precipitation",
-        0.0118
-      ],
-      [
-        "nasa_wind_speed",
-        0.0116
+        0.7464
       ],
       [
         "roll_3_mean",
-        0.0092
+        0.0554
+      ],
+      [
+        "nasa_temperature",
+        0.0245
+      ],
+      [
+        "roll_7_mean",
+        0.0214
+      ],
+      [
+        "lag_2",
+        0.0187
       ],
       [
         "co_value",
-        0.0085
+        0.0161
+      ],
+      [
+        "precipitation",
+        0.0157
+      ],
+      [
+        "day_of_year",
+        0.0142
+      ],
+      [
+        "nasa_wind_speed",
+        0.0141
+      ],
+      [
+        "no2_value",
+        0.0119
       ]
     ]
   },
@@ -121,52 +121,52 @@
       "2026-06-16"
     ],
     "metrics": {
-      "train_r2": 0.836,
-      "test_r2": 0.7976,
-      "test_mae": 1.7,
-      "test_rmse": 2.57,
-      "overfit_delta": 0.0384
+      "train_r2": 0.7267,
+      "test_r2": 0.6783,
+      "test_mae": 2.01,
+      "test_rmse": 3.24,
+      "overfit_delta": 0.0483
     },
     "top_features": [
       [
-        "roll_7_mean",
-        0.3261
+        "lag_1",
+        0.5385
       ],
       [
-        "lag_1",
-        0.2586
+        "roll_7_mean",
+        0.1428
       ],
       [
         "roll_3_std",
-        0.2546
-      ],
-      [
-        "lag_2",
-        0.1168
+        0.1404
       ],
       [
         "roll_3_mean",
-        0.0186
+        0.0726
+      ],
+      [
+        "lag_2",
+        0.0665
       ],
       [
         "lag_3",
-        0.0167
+        0.0208
       ],
       [
         "day_of_year",
-        0.0039
+        0.0101
       ],
       [
         "lag_7",
-        0.0031
+        0.0047
       ],
       [
         "day_of_week",
-        0.0012
+        0.0027
       ],
       [
         "month",
-        0.0003
+        0.0008
       ]
     ]
   },
@@ -202,52 +202,52 @@
       "2026-06-17"
     ],
     "metrics": {
-      "train_r2": 0.8329,
-      "test_r2": 0.4817,
-      "test_mae": 2.01,
-      "test_rmse": 9.15,
-      "overfit_delta": 0.3512
+      "train_r2": 0.6871,
+      "test_r2": 0.2082,
+      "test_mae": 2.68,
+      "test_rmse": 11.32,
+      "overfit_delta": 0.4789
     },
     "top_features": [
       [
         "lag_1",
-        0.333
-      ],
-      [
-        "roll_3_std",
-        0.2163
-      ],
-      [
-        "roll_7_mean",
-        0.1748
-      ],
-      [
-        "lag_2",
-        0.1016
+        0.4669
       ],
       [
         "day_of_year",
-        0.0461
-      ],
-      [
-        "roll_3_mean",
-        0.036
+        0.1309
       ],
       [
         "humidity",
-        0.0277
+        0.0927
       ],
       [
         "lag_3",
-        0.0266
-      ],
-      [
-        "day_of_week",
-        0.0241
+        0.0738
       ],
       [
         "temperature",
-        0.0055
+        0.0455
+      ],
+      [
+        "roll_7_mean",
+        0.0394
+      ],
+      [
+        "day_of_week",
+        0.0377
+      ],
+      [
+        "roll_3_mean",
+        0.0348
+      ],
+      [
+        "lag_2",
+        0.0251
+      ],
+      [
+        "lag_7",
+        0.0241
       ]
     ]
   },
@@ -281,52 +281,52 @@
       "2026-06-17"
     ],
     "metrics": {
-      "train_r2": 0.7417,
-      "test_r2": 0.6437,
-      "test_mae": 1.55,
-      "test_rmse": 2.21,
-      "overfit_delta": 0.098
+      "train_r2": 0.7016,
+      "test_r2": 0.6017,
+      "test_mae": 1.61,
+      "test_rmse": 2.34,
+      "overfit_delta": 0.0999
     },
     "top_features": [
       [
-        "roll_7_mean",
-        0.3171
+        "lag_1",
+        0.3123
       ],
       [
-        "lag_1",
-        0.2481
+        "roll_7_mean",
+        0.2589
       ],
       [
         "roll_3_std",
-        0.2361
+        0.2317
       ],
       [
         "lag_2",
-        0.11
+        0.0901
       ],
       [
         "roll_3_mean",
-        0.0514
+        0.0596
       ],
       [
         "lag_3",
-        0.0188
+        0.0195
       ],
       [
         "day_of_year",
-        0.0093
+        0.0145
       ],
       [
         "lag_7",
-        0.0042
+        0.0068
       ],
       [
         "day_of_week",
-        0.0041
+        0.0052
       ],
       [
         "month",
-        0.0006
+        0.0013
       ]
     ]
   }

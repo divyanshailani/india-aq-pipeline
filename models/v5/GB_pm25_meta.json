@@ -30,52 +30,52 @@
     "2026-06-17"
   ],
   "metrics": {
-    "train_r2": 0.8329,
-    "test_r2": 0.4817,
-    "test_mae": 2.01,
-    "test_rmse": 9.15,
-    "overfit_delta": 0.3512
+    "train_r2": 0.6871,
+    "test_r2": 0.2082,
+    "test_mae": 2.68,
+    "test_rmse": 11.32,
+    "overfit_delta": 0.4789
   },
   "top_features": [
     [
       "lag_1",
-      0.333
-    ],
-    [
-      "roll_3_std",
-      0.2163
-    ],
-    [
-      "roll_7_mean",
-      0.1748
-    ],
-    [
-      "lag_2",
-      0.1016
+      0.4669
     ],
     [
       "day_of_year",
-      0.0461
-    ],
-    [
-      "roll_3_mean",
-      0.036
+      0.1309
     ],
     [
       "humidity",
-      0.0277
+      0.0927
     ],
     [
       "lag_3",
-      0.0266
-    ],
-    [
-      "day_of_week",
-      0.0241
+      0.0738
     ],
     [
       "temperature",
-      0.0055
+      0.0455
+    ],
+    [
+      "roll_7_mean",
+      0.0394
+    ],
+    [
+      "day_of_week",
+      0.0377
+    ],
+    [
+      "roll_3_mean",
+      0.0348
+    ],
+    [
+      "lag_2",
+      0.0251
+    ],
+    [
+      "lag_7",
+      0.0241
     ]
   ]
 }

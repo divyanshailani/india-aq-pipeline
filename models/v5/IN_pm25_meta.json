@@ -41,52 +41,52 @@
     "2026-06-17"
   ],
   "metrics": {
-    "train_r2": 0.9129,
-    "test_r2": 0.7718,
-    "test_mae": 8.52,
-    "test_rmse": 15.98,
-    "overfit_delta": 0.1411
+    "train_r2": 0.8503,
+    "test_r2": 0.6399,
+    "test_mae": 10.18,
+    "test_rmse": 20.07,
+    "overfit_delta": 0.2104
   },
   "top_features": [
     [
       "lag_1",
-      0.6481
-    ],
-    [
-      "roll_7_mean",
-      0.1521
-    ],
-    [
-      "roll_3_std",
-      0.0732
-    ],
-    [
-      "lag_2",
-      0.0292
-    ],
-    [
-      "day_of_year",
-      0.0143
-    ],
-    [
-      "nasa_temperature",
-      0.013
-    ],
-    [
-      "precipitation",
-      0.0118
-    ],
-    [
-      "nasa_wind_speed",
-      0.0116
+      0.7464
     ],
     [
       "roll_3_mean",
-      0.0092
+      0.0554
+    ],
+    [
+      "nasa_temperature",
+      0.0245
+    ],
+    [
+      "roll_7_mean",
+      0.0214
+    ],
+    [
+      "lag_2",
+      0.0187
     ],
     [
       "co_value",
-      0.0085
+      0.0161
+    ],
+    [
+      "precipitation",
+      0.0157
+    ],
+    [
+      "day_of_year",
+      0.0142
+    ],
+    [
+      "nasa_wind_speed",
+      0.0141
+    ],
+    [
+      "no2_value",
+      0.0119
     ]
   ]
 }
