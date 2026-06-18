@@ -450,6 +450,26 @@ def main():
 
     # Update run record
     elapsed = time.time() - start
+
+    # Load training metrics as fallback
+    train_r2 = None
+    train_mae = None
+    meta_path = os.path.join(MODEL_DIR, "all_models_meta.json")
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            all_meta = json.load(f)
+        # Average across countries
+        r2s = [m["metrics"]["test_r2"] for m in all_meta.values() if "metrics" in m]
+        maes = [m["metrics"]["test_mae"] for m in all_meta.values() if "metrics" in m]
+        if r2s:
+            train_r2 = round(sum(r2s) / len(r2s), 4)
+            train_mae = round(sum(maes) / len(maes), 2)
+
+    # Use live if available, otherwise training metrics
+    display_mae = live_mae if live_mae else train_mae
+    display_r2 = live_r2 if live_r2 else train_r2
+    metrics_source = "live" if live_mae else "training"
+
     with conn.cursor() as cur:
         cur.execute("""
             UPDATE pipeline_runs SET
@@ -459,7 +479,7 @@ def main():
                 live_mae = %s,
                 live_r2 = %s
             WHERE run_id = %s
-        """, (total_preds, validated, live_mae, live_r2, str(run_id)))
+        """, (total_preds, validated, display_mae, display_r2, str(run_id)))
     conn.commit()
 
     print(f"\n{'═'*60}")
@@ -467,12 +487,16 @@ def main():
     print(f"{'═'*60}")
     print(f"  Predictions: {total_preds:,}")
     print(f"  Validated:   {validated}")
-    if live_mae:
-        print(f"  Live MAE:    {live_mae:.2f} µg/m³")
-        print(f"  Live R²:     {live_r2:.4f}")
+    if display_mae is not None:
+        label = "Live" if metrics_source == "live" else "Model"
+        print(f"  {label} MAE:  {display_mae:.2f} µg/m³")
+        print(f"  {label} R²:   {display_r2:.4f}")
+        if metrics_source == "training":
+            print(f"  (Using training metrics — live metrics available after validation)")
 
     conn.close()
 
 
 if __name__ == "__main__":
     main()
+
