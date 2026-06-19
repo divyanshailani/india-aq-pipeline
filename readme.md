@@ -1,7 +1,7 @@
 # 🌍 Global AQ Intelligence
 
 <!-- BLOCK 1: TL;DR -->
-![Dashboard Screenshot](https://raw.githubusercontent.com/divyanshailani/global-aq-intelligence-web/main/public/images/ui_dashboard.png)
+![Forecast Horizons EDA](./plots/forecast_horizons.png)
 
 > **An enterprise-grade, weather-aware PM2.5 forecasting engine predicting air quality for 4 countries using Gradient Boosting & Thermodynamics.**
 
@@ -35,7 +35,6 @@ graph LR
 
 ### Project Journey & Mathematical Evolution
 
-![Forecast Horizons EDA](./plots/forecast_horizons.png)
 
 What started as a simple local EDA project evolved into a robust, global MLOps architecture over 7 major iterations:
 
