@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-19T00:31:34.862288",
+  "generated_at": "2026-06-19T10:16:14.759447",
   "mae": 5.54,
   "r2": 0.6846,
   "source": "backtest",
@@ -24,8 +24,8 @@
     }
   },
   "confidence_explanation": {
-    "7_day": "Direct model prediction using real lag features. Highest accuracy.",
-    "15_day": "Chained predictions \u2014 each day uses predicted values as inputs. Accuracy decreases.",
-    "30_day": "Extended chained forecast. Treat as directional trend only."
+    "7_day": "Direct Horizon Anchors + Weather-Weighted Interpolation. Highest accuracy.",
+    "15_day": "Direct Horizon Anchors + Weather-Weighted Interpolation. Accuracy decreases.",
+    "30_day": "Direct Horizon Anchors + Weather-Weighted Interpolation. Treat as directional trend only."
   }
 }

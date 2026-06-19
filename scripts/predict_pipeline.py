@@ -32,8 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.config import DB_CONFIG, MODEL_DIR as _MODEL_DIR, SITE_DATA_DIR
 
 MODEL_DIR = _MODEL_DIR
-V7_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v7_exp")
-V6_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v6")
+V7_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v7")  # Production
 OUTPUT_DIR = SITE_DATA_DIR
 
 COUNTRIES = ["IN", "US", "GB", "AU"]
@@ -373,7 +372,7 @@ def fetch_station_forecasts(stations_df):
             
             station_forecast = {}
             for j in range(len(time_arr)):
-                station_forecast[j] = {
+                station_forecast[time_arr[j]] = {
                     "temp": temp_arr[j] if temp_arr[j] is not None else 0,
                     "wind": wind_arr[j] if wind_arr[j] is not None else 0,
                     "precip": prec_arr[j] if prec_arr[j] is not None else 0
@@ -396,6 +395,7 @@ def predict_direct_v7(country_code, last_row, station_forecast):
     Uses Open-Meteo future weather for the specific horizon.
     """
     direct = {}
+    last_date = pd.to_datetime(last_row.get("date", date.today()))
     
     # Calculate climatology baseline for h=30
     climatology_baseline = {}
@@ -415,20 +415,22 @@ def predict_direct_v7(country_code, last_row, station_forecast):
         medians   = meta.get("feature_medians", {})
 
         row = {}
+        target_date_h_str = (last_date + timedelta(days=h)).strftime('%Y-%m-%d')
+        
         for col in feat_cols:
             if col == "future_temp":
-                if h <= 15 and h in station_forecast:
-                    row[col] = station_forecast[h].get("temp", 0)
+                if h <= 15 and target_date_h_str in station_forecast:
+                    row[col] = station_forecast[target_date_h_str].get("temp", 0)
                 else:
                     row[col] = climatology_baseline["temp"]
             elif col == "future_wind":
-                if h <= 15 and h in station_forecast:
-                    row[col] = station_forecast[h].get("wind", 0)
+                if h <= 15 and target_date_h_str in station_forecast:
+                    row[col] = station_forecast[target_date_h_str].get("wind", 0)
                 else:
                     row[col] = climatology_baseline["wind"]
             elif col == "future_precip":
-                if h <= 15 and h in station_forecast:
-                    row[col] = station_forecast[h].get("precip", 0)
+                if h <= 15 and target_date_h_str in station_forecast:
+                    row[col] = station_forecast[target_date_h_str].get("precip", 0)
                 else:
                     row[col] = climatology_baseline["precip"]
             else:
@@ -450,7 +452,6 @@ def predict_direct_v7(country_code, last_row, station_forecast):
 
     # Interpolate for 1..30
     predictions = []
-    last_date = pd.to_datetime(last_row.get("date", date.today()))
     
     for day in range(1, 31):
         target_date = last_date + timedelta(days=day)
@@ -478,10 +479,11 @@ def predict_direct_v7(country_code, last_row, station_forecast):
             confidence = "low"
             confidence_pct = max(30, 50 - (day - 15) * 1.5)
 
-        if day <= 15 and day in station_forecast:
-            temp = station_forecast[day].get("temp", 0)
-            wind = station_forecast[day].get("wind", 0)
-            precip = station_forecast[day].get("precip", 0)
+        target_date_str = target_date.strftime('%Y-%m-%d')
+        if day <= 15 and target_date_str in station_forecast:
+            temp = station_forecast[target_date_str].get("temp", 0)
+            wind = station_forecast[target_date_str].get("wind", 0)
+            precip = station_forecast[target_date_str].get("precip", 0)
         else:
             temp = climatology_baseline.get("temp", 0)
             wind = climatology_baseline.get("wind", 0)
@@ -618,10 +620,8 @@ def run_predictions(conn, run_id):
 
         forecast_records = []
         for r in daily_agg.to_dict(orient="records"):
-            # Horizon_days is 1-indexed, forecasts are 0-indexed (0 to 15)
-            day_idx = r["horizon_days"] - 1
-            lookup_idx = min(day_idx, 15)
-            day_weather = anchor_weather.get(lookup_idx)
+            target_date_str = r["target_date"]
+            day_weather = anchor_weather.get(target_date_str)
             
             if day_weather:
                 r["weather_context"] = {
@@ -661,7 +661,7 @@ def export_site_data(predictions, metric_mae, metric_r2, metric_source,
     # Combined metadata
     model_meta = {
         "generated_at": datetime.now().isoformat(),
-        "model_version": "v5",
+        "model_version": "v7_weather_direct",
         "countries": {},
         "accuracy": {
             "mae": round(metric_mae, 2) if metric_mae is not None else None,
@@ -699,15 +699,24 @@ def export_site_data(predictions, metric_mae, metric_r2, metric_source,
             for cc, m in COUNTRY_META.items()
         },
         "confidence_explanation": {
-            "7_day": "Direct model prediction using real lag features. Highest accuracy.",
-            "15_day": "Chained predictions — each day uses predicted values as inputs. Accuracy decreases.",
-            "30_day": "Extended chained forecast. Treat as directional trend only.",
+            "7_day": "Direct Horizon Anchors + Weather-Weighted Interpolation. Highest accuracy.",
+            "15_day": "Direct Horizon Anchors + Weather-Weighted Interpolation. Accuracy decreases.",
+            "30_day": "Direct Horizon Anchors + Weather-Weighted Interpolation. Treat as directional trend only.",
         }
     }
     with open(os.path.join(OUTPUT_DIR, "accuracy.json"), "w") as f:
         json.dump(accuracy, f, indent=2)
 
     print(f"\n  Exported to {OUTPUT_DIR}/")
+    
+    # Sync to frontend
+    desktop_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    frontend_dir = os.path.join(desktop_dir, "global-aq-intelligence", "public", "data")
+    if os.path.exists(os.path.dirname(frontend_dir)):
+        import shutil
+        os.makedirs(frontend_dir, exist_ok=True)
+        shutil.copytree(OUTPUT_DIR, frontend_dir, dirs_exist_ok=True)
+        print(f"  Synced site_data to frontend repo at {frontend_dir}")
     print(f"    predictions_IN.json, predictions_US.json, ...")
     print(f"    model_meta.json, accuracy.json")
 

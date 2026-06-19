@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-06-19T00:31:34.862173",
-  "model_version": "v5",
+  "generated_at": "2026-06-19T10:16:14.759317",
+  "model_version": "v7_weather_direct",
   "countries": {
     "IN": {
       "name": "India",

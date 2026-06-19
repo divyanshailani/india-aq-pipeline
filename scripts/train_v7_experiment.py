@@ -45,7 +45,7 @@ from src.config import DB_CONFIG
 # ─── Config ───────────────────────────────────────────────
 HORIZONS = [1, 7, 14, 30]
 COUNTRIES = ["IN", "US", "GB", "AU"]
-MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v7_exp")
+MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v7")  # Production
 
 # v6 feature set — all backward-looking, zero leakage
 FEATURE_COLS_V6 = [
@@ -265,7 +265,7 @@ def train_horizon_model(conn, country_code, horizon):
     meta = {
         "country":        country_code,
         "model":          "GradientBoostingRegressor",
-        "version":        "v6",
+        "version":        "v7_weather_direct",
         "horizon_days":   horizon,
         "features":       features,
         "feature_medians": medians,
