@@ -22,6 +22,7 @@ import time
 import requests
 import uuid
 from datetime import datetime, timedelta, date
+from live_validation import run_live_validation
 
 import joblib
 import numpy as np
@@ -771,6 +772,12 @@ def main():
     print("  Phase 2.5: Backtest (Last 7 Days vs Actuals)")
     print(f"{'─'*60}")
     bt_mae, bt_r2, bt_sample_count, bt_country = backtest_recent(conn, n_days=7)
+
+    # Phase 3.75: Live Validation Observatory (Collision Engine)
+    print(f"\n{'─'*60}")
+    print("  Phase 2.75: Live Validation Observatory (Collision Engine)")
+    print(f"{'─'*60}")
+    live_validation_count = run_live_validation(conn)
 
     # Phase 4: Export JSON for site
     print(f"\n{'─'*60}")
