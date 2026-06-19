@@ -1,7 +1,7 @@
 # 🌍 Global AQ Intelligence
 
 <!-- BLOCK 1: TL;DR -->
-![Dashboard Screenshot](./plots/ui_dashboard.png)
+![Dashboard Screenshot](https://raw.githubusercontent.com/divyanshailani/global-aq-intelligence-web/main/public/images/ui_dashboard.png)
 
 > **An enterprise-grade, weather-aware PM2.5 forecasting engine predicting air quality for 4 countries using Gradient Boosting & Thermodynamics.**
 
