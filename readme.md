@@ -1,7 +1,7 @@
 # 🌍 Global AQ Intelligence
 
 <!-- BLOCK 1: TL;DR -->
-![Dashboard Screenshot](./plots/forecast_horizons.png)
+![Dashboard Screenshot](./plots/ui_dashboard.png)
 
 > **An enterprise-grade, weather-aware PM2.5 forecasting engine predicting air quality for 4 countries using Gradient Boosting & Thermodynamics.**
 
@@ -11,7 +11,7 @@
 
 <!-- BLOCK 2: Why it's God-Tier -->
 ## ⚡ Why it's God-Tier
-- **Zero-Data Leakage Pipeline:** Strict chronological walk-forward validation system. Ensures models never see "future" temporal data during training, providing honest, production-ready accuracy metrics rather than overfit illusions.
+- **Zero-Data Leakage Pipeline:** Chronological Holdout Validation system. Ensures models never see "future" temporal data during training, providing honest, production-ready accuracy metrics rather than overfit illusions.
 - **Thermodynamics Engine:** A custom physics-based 'Weather-Weighted Interpolator' that dynamically bends predictions by applying mathematical logic for rain washouts (30% reduction) and wind dispersion (15% reduction).
 - **Cost-Optimized Architecture:** A Local-Compute to Edge-CDN deployment strategy. ML training and heavy database crunching run locally (zero cloud cost), exporting ultra-lightweight static JSONs that are automatically deployed to a free Vercel Edge network.
 
@@ -21,7 +21,7 @@
 ## 🏛️ Architecture Flow
 ```mermaid
 graph LR
-    A[(Local DB\nPostgreSQL)] -->|Features| B(Python ML Pipeline\nGBR + Thermodynamics)
+    A[(Local DB<br>PostgreSQL)] -->|Features| B(Python ML Pipeline<br>GBR + Thermodynamics)
     B -->|Exports| C{JSON Static Data}
     C -->|Pushes to| D[GitHub Repository]
     D -->|Auto-Deploys| E((Vercel Next.js Edge))
@@ -34,6 +34,9 @@ graph LR
 ## 🔬 The Deep Dive (For Tech Leads)
 
 ### Project Journey & Mathematical Evolution
+
+![Forecast Horizons EDA](./plots/forecast_horizons.png)
+
 What started as a simple local EDA project evolved into a robust, global MLOps architecture over 7 major iterations:
 
 - **Phase 1-3:** Data Cleaning & Context. Discovered that standard time-series models leak data without chronological splitting. Replaced Open-Meteo historicals with NASA POWER due to null-rate issues.
