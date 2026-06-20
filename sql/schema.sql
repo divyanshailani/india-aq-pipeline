@@ -289,3 +289,18 @@ ALTER TABLE prediction_log
 SELECT table_name FROM information_schema.tables
 WHERE table_schema = 'public'
 ORDER BY table_name;
+
+-- ============================================================
+-- v11 Migration: Aerosol Optical Depth (AOD) Features
+-- ============================================================
+CREATE TABLE IF NOT EXISTS satellite_aod_features (
+    station_id      INTEGER REFERENCES stations(id),
+    date            DATE NOT NULL,
+    aod_mean        DOUBLE PRECISION,
+    aod_max         DOUBLE PRECISION,
+    created_at      TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (station_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_satellite_aod_lookup
+    ON satellite_aod_features (station_id, date);
