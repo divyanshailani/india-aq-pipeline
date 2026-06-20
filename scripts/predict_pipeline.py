@@ -804,7 +804,10 @@ def run_predictions(conn, run_id):
 
         country_forecast = {
             "country": cc,
-            "meta": COUNTRY_META[cc],
+            "meta": {
+                **COUNTRY_META[cc],
+                "fire_count": len(viirs) if not viirs.empty else 0
+            },
             "generated_at": datetime.now().isoformat(),
             "last_data_date": str(df["date"].max()),
             "forecast": forecast_records,
