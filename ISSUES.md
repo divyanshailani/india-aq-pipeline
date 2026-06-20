@@ -40,7 +40,7 @@ We engineered a robust suite of temporal memory features (`lag_1` to `lag_30`, r
 
 ---
 
-## 5. The Chaining "Time Machine" Collapse (Phase 5 to Phase 7)
+## 5. The Recursive Snowball Effect & Chaining Collapse [RESOLVED - V8 Release]
 **Issue:** 
 In `v5`, we used a 30-day chained forecasting loop where Day 1's prediction was fed into Day 2 as a `lag_1` feature. This caused rapid error compounding (exponential degradation), meaning that by Day 30 the model was predicting complete noise.
 
@@ -88,7 +88,7 @@ We identified that `backtest_recent()` inherently tests a highly volatile micro-
 
 ---
 
-## 9. Synchronous ETL Bottleneck — API Rate Limits Causing Pipeline Stalls [RESOLVED 2026-06-19]
+## 9. Synchronous ETL Bottleneck — API Rate Limiting [RESOLVED - V8 Release]
 **Issue:**
 The original `fetch_openaq.py` made sequential blocking `requests.get()` calls per station. With 1,400+ US stations, this created multi-hour fetch windows and regularly hit the OpenAQ API's rate limit (HTTP 429). When 429s hit, the pipeline stalled silently.
 
@@ -114,7 +114,7 @@ Rewrote the measurement fetch layer as a fully async pipeline using `aiohttp` + 
 
 ---
 
-## 11. R² Low-Variance Illusion — Metric Misleads on Clean-Air Countries [RESOLVED 2026-06-19]
+## 11. Low-Variance $R^2$ Illusion — Metric Misleads on Clean-Air Countries [RESOLVED - V8 Release]
 **Issue:**
 R² (coefficient of determination) is pathologically misleading for low-variance targets. Australia and UK have PM2.5 ranges of 1–8 µg/m³. A model that predicts the mean every time achieves R²=0.0. A model that adds small noise achieves negative R². This caused Australia (R²=0.45) and UK (R²=0.24) to look broken on the frontend and in internal logs, even though their absolute MAE was well within useful accuracy (1.88 and 2.41 µg/m³ respectively).
 

@@ -4,12 +4,24 @@
 
 # Global AQ Intelligence — ML Pipeline
 
+[![Live Deployment](https://img.shields.io/badge/Live_Deployment-global--aq--intelligence.vercel.app-10B981?style=for-the-badge&logo=vercel)](https://global-aq-intelligence.vercel.app)
+> **Currently running the V8 Horizon-Aligned Thermodynamics Engine.**
+
 ![Dashboard Screenshot](https://raw.githubusercontent.com/divyanshailani/global-aq-intelligence-web/main/public/images/ui_dashboard.png)
 > End-to-end PM2.5 forecasting engine for 4 countries. Autonomous daily pipeline: fetch → engineer → predict → export → sync.
 
 **Stack:** Python · PostgreSQL · scikit-learn GBR · NASA POWER · Open-Meteo · FastAPI
 
 **Frontend:** [global-aq-intelligence-web](https://github.com/divyanshailani/global-aq-intelligence-web)
+
+---
+
+## 🚀 Recent Updates (V8 Production Release)
+
+- **Horizon-Aligned Autoregressive Memory**: Shifted from a stateless model to a time-aware engine by injecting strict $y_{t-h}$ lags and $\sigma_{3d}$ volatility matrices, entirely eliminating the high-variance MASE trap in chaotic environments like India and GB.
+- **Metric Engineering (NMAE & MASE)**: Deprecated the mathematically flawed $R^2$ score for low-variance environments. The backend now strictly evaluates using MASE (Mean Absolute Scaled Error) against a naive baseline, while the UI renders a normalized Accuracy Percentage (NMAE).
+- **ETL Fault Tolerance**: Engineered a resilient asynchronous batching pipeline (`aiohttp`). The system successfully demonstrated zero-downtime fault tolerance by seamlessly falling back to internal database states when the primary OpenAQ API threw a 401 Unauthorized suspension block.
+- **UX Time-Relativity**: Eradicated the 'Index 0' date trap on the Next.js frontend by implementing strict mathematical matching between the user's local browser `new Date()` and the payload's absolute timestamp.
 
 ---
 
