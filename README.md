@@ -54,7 +54,7 @@ We migrated from scikit-learn GBR to native XGBoost (DMatrix) to achieve a 46x c
 
 ## Performance (V9 XGBoost Engine)
 
-![Forecast Horizons EDA](./plots/forecast_horizons.png)
+![Forecast Horizons EDA](./plots/forecast_horizons.png?v=9)
 
 The XGBoost models yielded phenomenal speed-ups and maintained robust efficiency boundaries across all anchor horizons globally. Highlight: maintaining ~56-62% accuracy even at 30-day horizons in chaotic environments.
 
