@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-19T19:24:32.049714",
+  "generated_at": "2026-06-20T07:27:47.374865",
   "model_version": "v7_weather_direct",
   "countries": {
     "IN": {
@@ -60,10 +60,10 @@
     }
   },
   "accuracy": {
-    "mae": 5.54,
-    "accuracy_percentage": 63.6,
+    "mae": 5.89,
+    "accuracy_percentage": 61.9,
     "source": "backtest",
-    "sample_count": 5898,
+    "sample_count": 4878,
     "live_validation_count": 0,
     "note": "Live metrics require 100+ validated completed forecasts. Backtest metrics are recent one-step checks against known actuals."
   }

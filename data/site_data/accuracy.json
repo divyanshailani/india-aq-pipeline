@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-19T19:24:32.049840",
-  "last_pipeline_run": "2026-06-19T19:24:32.049841",
-  "mae": 5.54,
-  "accuracy_percentage": 63.6,
+  "generated_at": "2026-06-20T07:27:47.375185",
+  "last_pipeline_run": "2026-06-20T07:27:47.375187",
+  "mae": 5.89,
+  "accuracy_percentage": 61.9,
   "source": "backtest",
-  "sample_count": 5898,
+  "sample_count": 4878,
   "live_validation_count": 0,
   "training_metrics": {
     "IN": {
