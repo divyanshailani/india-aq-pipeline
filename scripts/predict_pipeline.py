@@ -222,13 +222,14 @@ def backtest_recent(conn, n_days=7):
     country_metrics = {}
 
     for cc in COUNTRIES:
-        meta_path = os.path.join(V7_MODEL_DIR, f"{cc}_pm25_h1_meta.json")
-        model_path = os.path.join(V7_MODEL_DIR, f"{cc}_pm25_h1_gbr.pkl")
+        meta_path = os.path.join(V9_MODEL_DIR, f"{cc}_pm25_h1_meta.json")
+        model_path = os.path.join(V9_MODEL_DIR, f"{cc}_pm25_h1_xgb.json")
 
         if not os.path.exists(model_path):
             continue
 
-        model = joblib.load(model_path)
+        model = xgb.XGBRegressor()
+        model.load_model(model_path)
         with open(meta_path) as f:
             meta = json.load(f)
         feature_cols = meta["features"]
@@ -413,7 +414,7 @@ def fetch_station_forecasts(stations_df):
 
 
 
-def predict_direct_v7(country_code, last_row, station_forecast):
+def predict_direct_v9(country_code, last_row, station_forecast):
     """
     30-day forecast using direct horizon models (v7).
     Days 1/7/14/30 are direct model outputs.
@@ -556,7 +557,7 @@ def run_predictions(conn, run_id):
     total_predictions = 0
 
     for cc in COUNTRIES:
-        print(f"\n  {COUNTRY_META[cc]['flag']} {cc}: Generating v7 direct forecasts...")
+        print(f"\n  {COUNTRY_META[cc]['flag']} {cc}: Generating v9 direct forecasts...")
 
         # Get recent features only from active stations.
         df = get_recent_features(conn, cc)
@@ -600,7 +601,7 @@ def run_predictions(conn, run_id):
                 continue
 
             station_forecast = forecasts.get(sid, {})
-            preds = predict_direct_v7(cc, last_row, station_forecast)
+            preds = predict_direct_v9(cc, last_row, station_forecast)
             if not preds:
                 continue
             
@@ -696,7 +697,7 @@ def export_site_data(predictions, metric_mae, metric_acc, metric_source,
     # Combined metadata
     model_meta = {
         "generated_at": datetime.now().isoformat(),
-        "model_version": "v7_weather_direct",
+        "model_version": "v9_xgboost_global",
         "countries": {},
         "accuracy": {
             "mae": round(metric_mae, 2) if metric_mae is not None else None,
@@ -785,6 +786,19 @@ def main():
             VALUES (%s, NOW(), 'running')
         """, (str(run_id),))
     conn.commit()
+
+    # Dynamically update COUNTRY_META from V9 models
+    for cc in COUNTRIES:
+        meta_path = os.path.join(V9_MODEL_DIR, f"{cc}_pm25_h1_meta.json")
+        if os.path.exists(meta_path):
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+            metrics = meta.get("metrics", {})
+            acc = metrics.get("accuracy_percentage", 0)
+            mae = metrics.get("test_mae", 0)
+            COUNTRY_META[cc]["accuracy_percentage"] = acc
+            COUNTRY_META[cc]["test_mae"] = mae
+            COUNTRY_META[cc]["reason"] = f"Accuracy={acc:.1f}%, V9 XGBoost Engine"
 
     # Phase 1: Check last run
     last_run = get_last_run_date(conn)
