@@ -2,13 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
-## [8.0.0] - V8 Production Release
+## [8.0.0] - V8 Direct-Horizon Engine (Deprecated)
 
 ### 🚀 Recent Updates (Transition to V8)
 - **Horizon-Aligned Autoregressive Memory**: Shifted from a stateless model to a time-aware engine by injecting strict $y_{t-h}$ lags and $\sigma_{3d}$ volatility matrices, entirely eliminating the high-variance MASE trap in chaotic environments like India and GB.
 - **Metric Engineering (NMAE & MASE)**: Deprecated the mathematically flawed $R^2$ score for low-variance environments. The backend now strictly evaluates using MASE (Mean Absolute Scaled Error) against a naive baseline, while the UI renders a normalized Accuracy Percentage (NMAE).
 - **ETL Fault Tolerance**: Engineered a resilient asynchronous batching pipeline (`aiohttp`). The system successfully demonstrated zero-downtime fault tolerance by seamlessly falling back to internal database states when the primary OpenAQ API threw a 401 Unauthorized suspension block.
 - **UX Time-Relativity**: Eradicated the 'Index 0' date trap on the Next.js frontend by implementing strict mathematical matching between the user's local browser `new Date()` and the payload's absolute timestamp.
+
+### Historical Architecture: V8 Horizon-Aligned Thermodynamics Engine
+
+**V8 Horizon-Aligned Architecture (scikit-learn GBR):**
+We used strict autoregressive lags ($y_{t-h}$) and a 3-day rolling volatility matrix ($\sigma_{3d}$) engineered dynamically in Pandas prior to inference. This completely eliminated the error compounding of recursive models.
+- Independent models per horizon (h=1, 7, 14, 30) used lag features specifically aligned to their target horizon to prevent time leakage.
+- Short-term memory and volatility metrics acted as a momentum engine for high-variance regions.
+- Thermodynamic modifiers (precipitation washout, wind dispersion) were applied via Open-Meteo future forecasts.
+
+### Historical Performance (V8 Horizon-Aligned Engine)
+
+All metrics on held-out future data — strict chronological split, no leakage. We officially deprecated the $R^2$ score in favor of Mean Absolute Scaled Error (MASE) and Normalized Mean Absolute Error (NMAE) due to the mathematical low-variance illusion in clean-air countries.
+
+| Country | Code | Mean Absolute Error (MAE) | Real-World Accuracy (NMAE) | Intelligence Benchmark (MASE) |
+| :--- | :--- | :--- | :--- | :--- |
+| **India** | `IN` | 9.26 µg/m³ | **75.0%** | **0.88** (< 1.0) |
+| **United States** | `US` | 2.24 µg/m³ | **65.3%** | **0.91** (< 1.0) |
+| **Australia** | `AU` | 1.88 µg/m³ | **68.7%** | **0.85** (< 1.0) |
+| **United Kingdom** | `GB` | 2.41 µg/m³ | **63.0%** | **0.94** (< 1.0) |
+
+> **💡 The MASE Benchmark**
+> MASE measures the model's accuracy against a naive baseline (predicting tomorrow will be identical to today). A score `< 1.0` proves the ML model is successfully outperforming the naive assumption. Our V8 model achieves MASE < 1.0 across all nodes.
 
 ---
 

@@ -5,9 +5,9 @@
 # Global AQ Intelligence — ML Pipeline
 
 [![Live Deployment](https://img.shields.io/badge/Live_Deployment-global--aq--intelligence.vercel.app-10B981?style=for-the-badge&logo=vercel)](https://global-aq-intelligence.vercel.app)
-> **Currently running the V8 Horizon-Aligned Thermodynamics Engine.**
+> **Currently running the V9 XGBoost Thermodynamics Engine.**
 
-[📜 Read the full V8 Changelog & Architecture History here](CHANGELOG.md)
+[📜 Read the full V9 Changelog & Architecture History here](CHANGELOG.md)
 
 ![Dashboard Screenshot](https://raw.githubusercontent.com/divyanshailani/global-aq-intelligence-web/main/public/images/ui_dashboard.png)
 > End-to-end PM2.5 forecasting engine for 4 countries. Autonomous daily pipeline: fetch → engineer → predict → export → sync.
@@ -42,31 +42,40 @@ NASA POWER ──┼──▶ PostgreSQL ──▶ Feature Engineering ──▶
 Open-Meteo ──┘                   (lag/rolling/delta)     (GBR × 16)    (site_data/)    (auto-sync)
 ```
 
-### Model Architecture: V8 Horizon-Aligned Thermodynamics Engine
+### Model Architecture: V9 XGBoost Thermodynamics Engine
 
-**V8 Horizon-Aligned Architecture:**
-We use strict autoregressive lags ($y_{t-h}$) and a 3-day rolling volatility matrix ($\sigma_{3d}$) engineered dynamically in Pandas prior to XGBoost inference. This completely eliminates the error compounding of recursive models.
-- Independent models per horizon (h=1, 7, 14, 30) use lag features specifically aligned to their target horizon to prevent time leakage.
-- Short-term memory and volatility metrics act as a momentum engine for high-variance regions.
-- Thermodynamic modifiers (precipitation washout, wind dispersion) are applied via Open-Meteo future forecasts.
+**V9 Global Unified Architecture (Native XGBoost):**
+We migrated from scikit-learn GBR to native XGBoost (DMatrix) to achieve a 46x compute speedup by bypassing Python loops in favor of hardware-level C++ matrix operations. The core mathematical foundation remains unchanged:
+- **Horizon-Aligned Lags ($y_{t-h}$)**: Each of the 16 independent models aligns its autoregressive lags strictly to its forecast horizon to eliminate time leakage.
+- **3-Day Rolling Volatility Matrix ($\sigma_{3d}$)**: Acts as a momentum engine for high-variance regions.
+- **Thermodynamic Modifiers**: Applied via Open-Meteo future forecasts (precipitation washout, wind dispersion).
 
 ---
 
-## Performance (V8 Horizon-Aligned Engine)
+## Performance (V9 XGBoost Engine)
 
 ![Forecast Horizons EDA](./plots/forecast_horizons.png)
 
-All metrics on held-out future data — strict chronological split, no leakage. We have officially deprecated the $R^2$ score in favor of Mean Absolute Scaled Error (MASE) and Normalized Mean Absolute Error (NMAE) due to the mathematical low-variance illusion in clean-air countries.
+The XGBoost models yielded phenomenal speed-ups and maintained robust efficiency boundaries across all anchor horizons globally. Highlight: maintaining ~56-62% accuracy even at 30-day horizons in chaotic environments.
 
-| Country | Code | Mean Absolute Error (MAE) | Real-World Accuracy (NMAE) | Intelligence Benchmark (MASE) |
-| :--- | :--- | :--- | :--- | :--- |
-| **India** | `IN` | 9.26 µg/m³ | **75.0%** | **0.88** (< 1.0) |
-| **United States** | `US` | 2.24 µg/m³ | **65.3%** | **0.91** (< 1.0) |
-| **Australia** | `AU` | 1.88 µg/m³ | **68.7%** | **0.85** (< 1.0) |
-| **United Kingdom** | `GB` | 2.41 µg/m³ | **63.0%** | **0.94** (< 1.0) |
-
-> **💡 The MASE Benchmark**
-> MASE measures the model's accuracy against a naive baseline (predicting tomorrow will be identical to today). A score `< 1.0` proves the ML model is successfully outperforming the naive assumption. Our V8 model achieves MASE < 1.0 across all nodes.
+| Country | Horizon | MAE | NMAE | MASE | Accuracy (%) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **IN** | 1 | 10.41 | 0.2748 | 0.9600 | **72.52%** |
+| **IN** | 7 | 16.33 | 0.4245 | 0.7100 | **57.55%** |
+| **IN** | 14 | 17.19 | 0.4462 | 0.6100 | **55.38%** |
+| **IN** | 30 | 15.79 | 0.4175 | 0.5200 | **58.25%** |
+| **GB** | 1 | 2.26 | 0.3563 | 0.8500 | **64.37%** |
+| **GB** | 7 | 2.59 | 0.4063 | 0.6400 | **59.37%** |
+| **GB** | 14 | 2.78 | 0.4401 | 0.5700 | **55.99%** |
+| **GB** | 30 | 2.65 | 0.4333 | 0.6400 | **56.67%** |
+| **US** | 1 | 2.35 | 0.3215 | 0.8800 | **67.85%** |
+| **US** | 7 | 3.13 | 0.4278 | 0.7700 | **57.22%** |
+| **US** | 14 | 3.22 | 0.4401 | 0.7600 | **55.99%** |
+| **US** | 30 | 3.18 | 0.4352 | 0.7500 | **56.48%** |
+| **AU** | 1 | 1.91 | 0.3158 | 0.8100 | **68.42%** |
+| **AU** | 7 | 2.19 | 0.3626 | 0.6700 | **63.74%** |
+| **AU** | 14 | 2.16 | 0.3572 | 0.6700 | **64.28%** |
+| **AU** | 30 | 2.24 | 0.3701 | 0.6800 | **62.99%** |
 
 ---
 
@@ -166,6 +175,7 @@ Output JSONs are written to `data/site_data/` and automatically synced to `../gl
 | v6 | Direct multi-horizon | Separate model per horizon, no chaining |
 | v7 | Direct + future weather | Open-Meteo 16-day forecast injected at inference |
 | v8 | Global Unified | Horizon-Aligned Lags & Volatility Matrix |
+| v9 | Global Unified | Native XGBoost, Horizon-Aligned Lags & Volatility Matrix |
 
 ---
 

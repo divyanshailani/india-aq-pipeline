@@ -125,8 +125,9 @@ def train_horizon_model(conn, country_code, horizon):
     mean_y = np.mean(y_test)
     nmae = test_mae / mean_y if mean_y > 0 else 0
     mase = test_mae / naive_mae if naive_mae > 0 else 0
+    accuracy_percentage = max(0.0, (1.0 - nmae) * 100.0)
 
-    print(f"     test R²={test_r2:.4f}  MAE={test_mae:.2f}  NMAE={nmae:.4f}  Naive_MAE={naive_mae:.2f}  MASE={mase:.2f}")
+    print(f"     test R²={test_r2:.4f}  MAE={test_mae:.2f}  NMAE={nmae:.4f}  Naive_MAE={naive_mae:.2f}  MASE={mase:.2f}  Acc={accuracy_percentage:.2f}%")
 
     os.makedirs(MODEL_DIR, exist_ok=True)
     model_path = os.path.join(MODEL_DIR, f"{country_code}_pm25_h{horizon}_xgb.json")
@@ -145,6 +146,7 @@ def train_horizon_model(conn, country_code, horizon):
             "test_rmse": round(test_rmse, 2),
             "nmae": round(nmae, 4),
             "mase": round(mase, 2),
+            "accuracy_percentage": round(accuracy_percentage, 2),
         }
     }
     meta_path = os.path.join(MODEL_DIR, f"{country_code}_pm25_h{horizon}_meta.json")
@@ -168,13 +170,13 @@ def main():
     conn.close()
     
     print("\n### V9 Global XGBoost Engine - Final Evaluation")
-    print("| Country | Horizon | MAE | NMAE | MASE |")
-    print("| :--- | :--- | :--- | :--- | :--- |")
+    print("| Country | Horizon | MAE | NMAE | MASE | Accuracy (%) |")
+    print("| :--- | :--- | :--- | :--- | :--- | :--- |")
     for cc in COUNTRIES:
         for h in HORIZONS:
             m = all_meta.get(cc, {}).get(f"h{h}", {})
             if m:
-                print(f"| {cc} | {h} | {m['metrics']['test_mae']:.2f} | {m['metrics']['nmae']:.4f} | {m['metrics']['mase']:.4f} |")
+                print(f"| {cc} | {h} | {m['metrics']['test_mae']:.2f} | {m['metrics']['nmae']:.4f} | {m['metrics']['mase']:.4f} | {m['metrics']['accuracy_percentage']:.2f}% |")
 
 if __name__ == "__main__":
     main()
