@@ -143,3 +143,16 @@ The module-level docstring in `predict_pipeline.py` described the v5 chaining ar
 
 **Solution:**
 Docstring updated to describe V7 Direct Thermodynamics Engine: anchor points h1/h7/h14/h30 as direct GBR outputs, weather-weighted interpolation for intermediate days, and Open-Meteo 16-day future weather injection per station per date.
+
+---
+
+## 13. The 30-Day 'Climatology' Anchor Drag & Spatial Blindness [RESOLVED - V9.4 Release]
+**Issue:**
+While V9 performed extremely well at predicting global trends, the static `pm25_rolling_mean_30d` feature acted as an overwhelming anchor for short horizons (like 1-day). This dragged down agility and caused underfitting for chaotic micro-fluctuations. Furthermore, the model was "spatially blind" to massive smoke events since it only knew if a fire existed in a given country, not if the fire was blowing directly into a specific ground station.
+
+**Solution:**
+We developed the **V9.4 Geospatial Ensemble Router**:
+1. **Delta Target Transformation**: We pivoted the objective function from predicting absolute PM2.5 to predicting the *Velocity* ($\Delta Y = Y_t - Y_{t-1}$). This forces the model to explicitly correct a naive baseline.
+2. **Fading Memory (EMA)**: We ripped out the 30-day baseline for short horizons and upgraded the 3-day mean to an Exponential Moving Average (EMA), prioritizing yesterday's pollution to capture rapid fluctuations.
+3. **SUOMI VIIRS Spatial Engine**: We implemented the Haversine formula to bridge satellite fire coordinates with ground stations, creating a dynamic `fire_density_100km` and `fire_radiative_power_total` blast radius for each station.
+4. **Dynamic Routing**: Since Great Britain relies heavily on long-term 30-day climatology, we introduced a dynamic router that maintains the V9 model for GB at long horizons ($h=14, 30$), while using the upgraded V9.4 engine for all other nodes globally.
