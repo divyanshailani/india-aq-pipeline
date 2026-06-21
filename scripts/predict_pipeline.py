@@ -41,6 +41,7 @@ MODEL_DIR = _MODEL_DIR
 V7_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v7")  # Production
 V9_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v9")  # XGBoost Production
 V9_4_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v9_4")  # XGBoost V9.4
+V11_MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "v11")  # XGBoost V11 AOD
 OUTPUT_DIR = SITE_DATA_DIR
 
 COUNTRIES = ["IN", "US", "GB", "AU"]
@@ -407,6 +408,62 @@ def load_latest_viirs_data(country_code):
         print(f"Warning: Could not load viirs_data. Error: {e}")
         return pd.DataFrame(columns=["fire_lat", "fire_lon", "brightness", "acq_date"])
 
+def load_latest_aod_data(lat, lon, station_id, conn):
+    """
+    Fetch yesterday's AOD data from Open-Meteo for the given lat/lon.
+    Fallback to historical median from DB if the API fails or returns NaN.
+    """
+    aod_mean, aod_max = 0.0, 0.0
+    try:
+        url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": ["aerosol_optical_depth"],
+            "past_days": 2,
+            "forecast_days": 0,
+            "timezone": "auto"
+        }
+        resp = requests.get(url, params=params, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        yesterday_str = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        aods = hourly.get("aerosol_optical_depth", [])
+        
+        yesterday_aods = []
+        for t, val in zip(times, aods):
+            if t.startswith(yesterday_str) and val is not None:
+                yesterday_aods.append(val)
+                
+        if yesterday_aods:
+            aod_mean = float(np.mean(yesterday_aods))
+            aod_max = float(np.max(yesterday_aods))
+        else:
+            raise ValueError("No AOD data found for yesterday")
+            
+    except Exception as e:
+        print(f"      Warning: AOD live fetch failed for station {station_id} ({e}). Using DB fallback.")
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT aod_mean, aod_max 
+                    FROM satellite_aod_features 
+                    WHERE station_id = %s 
+                    ORDER BY date DESC LIMIT 1
+                """, (station_id,))
+                row = cur.fetchone()
+                if row:
+                    aod_mean, aod_max = row
+        except Exception as e2:
+            print(f"      Warning: AOD DB fallback failed for station {station_id} ({e2}).")
+            
+    return {"aod_mean_lag_1": aod_mean, "aod_max_lag_1": aod_max}
+
+
 def fetch_station_forecasts(stations_df):
     """
     Fetch 16-day Open-Meteo forecasts for a list of stations.
@@ -457,11 +514,11 @@ def fetch_station_forecasts(stations_df):
 
 
 
-def predict_direct_ensemble(country_code, station_df, station_forecast, viirs_data):
+def predict_direct_ensemble(country_code, station_df, station_forecast, viirs_data, aod_data):
     """
     Dynamic Geospatial Ensemble Router
     - GB @ h14, 30: Uses V9 Engine
-    - Otherwise: Uses V9.4 Engine (Delta + VIIRS)
+    - Otherwise: Uses V11 Engine (AOD + VIIRS)
     """
     direct = {}
     last_row = station_df.iloc[-1].to_dict()
@@ -475,7 +532,7 @@ def predict_direct_ensemble(country_code, station_df, station_forecast, viirs_da
         
     for h in [1, 7, 14, 30]:
         use_v9 = (country_code == 'GB' and h in [14, 30])
-        model_base_dir = V9_MODEL_DIR if use_v9 else V9_4_MODEL_DIR
+        model_base_dir = V9_MODEL_DIR if use_v9 else V11_MODEL_DIR
         
         model_path = os.path.join(model_base_dir, f"{country_code}_pm25_h{h}_xgb.json")
         meta_path  = os.path.join(model_base_dir, f"{country_code}_pm25_h{h}_meta.json")
@@ -598,6 +655,10 @@ def predict_direct_ensemble(country_code, station_df, station_forecast, viirs_da
                 elif col == "wind_v":
                     wd = last_row.get("wind_direction")
                     row[col] = np.sin(wd * np.pi / 180) if pd.notnull(wd) else medians.get(col, 0)
+                elif col == "aod_mean_lag_1":
+                    row[col] = aod_data.get("aod_mean_lag_1", medians.get(col, 0))
+                elif col == "aod_max_lag_1":
+                    row[col] = aod_data.get("aod_max_lag_1", medians.get(col, 0))
                 else:
                     val = last_row.get(col)
                     row[col] = val if val is not None else medians.get(col, 0)
@@ -735,8 +796,12 @@ def run_predictions(conn, run_id):
             if (date.today() - last_data_date).days > ACTIVE_STATION_MAX_AGE_DAYS:
                 continue
 
+            lat = float(station_coords[station_coords["station_id"] == sid]["latitude"].iloc[0])
+            lon = float(station_coords[station_coords["station_id"] == sid]["longitude"].iloc[0])
+            
+            aod_data = load_latest_aod_data(lat, lon, sid, conn)
             station_forecast = forecasts.get(sid, {})
-            preds = predict_direct_ensemble(cc, station_df, station_forecast, viirs)
+            preds = predict_direct_ensemble(cc, station_df, station_forecast, viirs, aod_data)
             if not preds:
                 continue
             

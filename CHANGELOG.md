@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [11.0.0] - V11 3D Atmospheric Ensemble Active
+
+### 🚀 Recent Updates (V11)
+- **3D Aerosol Optical Depth (AOD) Fusion**: Interfaced with Open-Meteo's CAMS European satellite data to extract a 3D physical representation of atmospheric aerosols.
+- **Extreme Spike Elimination**: Achieved a breakthrough MAE of 76.06 µg/m³ on extreme spikes (True PM2.5 > 150), compared to the V9.4 baseline of 87.48.
+- **Global Deployment**: Upgraded the dynamic router to dispatch all short-horizon inferences globally through the V11 physics engine. Great Britain long horizons safely fallback to V9.
+
 ## [9.4.0] - V9.4 Geospatial Ensemble Router
 
 ### 🚀 Recent Updates (V9.4)

@@ -36,6 +36,9 @@ def get_target_stations(conn):
     FROM daily_features df
     JOIN stations s ON df.station_id = s.id
     WHERE s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+    AND df.station_id NOT IN (
+        SELECT DISTINCT station_id FROM satellite_aod_features
+    )
     """
     return pd.read_sql(query, conn)
 
@@ -46,37 +49,52 @@ def get_date_range(conn):
 
 def fetch_open_meteo_aod(lat, lon, start_date, end_date):
     url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&start_date={start_date}&end_date={end_date}&hourly=aerosol_optical_depth"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        
-        if "hourly" not in data or "aerosol_optical_depth" not in data["hourly"]:
-            return pd.DataFrame()
+    
+    attempt = 0
+    while True:
+        try:
+            response = requests.get(url)
             
-        df = pd.DataFrame({
-            "time": pd.to_datetime(data["hourly"]["time"]),
-            "aod": data["hourly"]["aerosol_optical_depth"]
-        })
-        
-        # Drop nulls
-        df = df.dropna(subset=["aod"])
-        if df.empty:
-            return pd.DataFrame()
+            if response.status_code == 429:
+                attempt += 1
+                wait_time = min(60 * attempt, 300) # cap at 5 mins
+                print(f"    -> API Limit (429). Backing off for {wait_time} seconds (Attempt {attempt})...")
+                time.sleep(wait_time)
+                continue
+                
+            response.raise_for_status()
+            data = response.json()
             
-        # Extract date and aggregate
-        df["date"] = df["time"].dt.date
-        
-        daily_df = df.groupby("date").agg(
-            aod_mean=("aod", "mean"),
-            aod_max=("aod", "max")
-        ).reset_index()
-        
-        return daily_df
-        
-    except Exception as e:
-        print(f"Error fetching AOD for lat={lat}, lon={lon}: {e}")
-        return pd.DataFrame()
+            if "hourly" not in data or "aerosol_optical_depth" not in data["hourly"]:
+                return pd.DataFrame()
+                
+            df = pd.DataFrame({
+                "time": pd.to_datetime(data["hourly"]["time"]),
+                "aod": data["hourly"]["aerosol_optical_depth"]
+            })
+            
+            # Drop nulls
+            df = df.dropna(subset=["aod"])
+            if df.empty:
+                return pd.DataFrame()
+                
+            # Extract date and aggregate
+            df["date"] = df["time"].dt.date
+            
+            daily_df = df.groupby("date").agg(
+                aod_mean=("aod", "mean"),
+                aod_max=("aod", "max")
+            ).reset_index()
+            
+            return daily_df
+            
+        except Exception as e:
+            print(f"Error fetching AOD for lat={lat}, lon={lon}: {e}")
+            attempt += 1
+            if attempt > 10:
+                print(f"    -> Giving up after 10 failed network requests.")
+                return pd.DataFrame()
+            time.sleep(5)
 
 def upsert_aod_data(cur, records):
     if not records:
@@ -117,7 +135,7 @@ def main():
             records = []
             for _, aod_row in daily_aod_df.iterrows():
                 records.append((
-                    station_id,
+                    int(station_id),
                     aod_row['date'],
                     float(aod_row['aod_mean']),
                     float(aod_row['aod_max'])

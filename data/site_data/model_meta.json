@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-20T17:35:25.540639",
+  "generated_at": "2026-06-21T14:51:26.876739",
   "model_version": "v9_xgboost_global",
   "countries": {
     "IN": {
@@ -9,13 +9,10 @@
       "confidence": "high",
       "tag": "High Confidence",
       "tag_color": "green",
-      "reason": "Accuracy=72.5%, V9 XGBoost Engine",
-      "accuracy_percentage": 72.52,
-      "test_mae": 10.41,
-      "mase": 2.75,
-      "station_count": 51,
-      "last_data_date": "2026-06-17",
-      "forecast_days": 30
+      "reason": "Accuracy=74.2%, V9.4 Geospatial Ensemble",
+      "accuracy_percentage": 74.23,
+      "test_mae": 9.91,
+      "mase": 2.82
     },
     "US": {
       "name": "United States",
@@ -24,13 +21,10 @@
       "confidence": "high",
       "tag": "High Confidence",
       "tag_color": "green",
-      "reason": "Accuracy=67.8%, V9 XGBoost Engine",
-      "accuracy_percentage": 67.85,
-      "test_mae": 2.35,
-      "mase": 1.81,
-      "station_count": 51,
-      "last_data_date": "2026-06-16",
-      "forecast_days": 30
+      "reason": "Accuracy=69.8%, V9.4 Geospatial Ensemble",
+      "accuracy_percentage": 69.82,
+      "test_mae": 2.21,
+      "mase": 1.82
     },
     "GB": {
       "name": "United Kingdom",
@@ -39,10 +33,10 @@
       "confidence": "experimental",
       "tag": "Experimental: Limited Seasonal Data",
       "tag_color": "yellow",
-      "reason": "Accuracy=64.4%, V9 XGBoost Engine",
-      "accuracy_percentage": 64.37,
-      "test_mae": 2.26,
-      "mase": 1.77,
+      "reason": "Accuracy=65.2%, V9.4 Geospatial Ensemble",
+      "accuracy_percentage": 65.15,
+      "test_mae": 2.22,
+      "mase": 1.74,
       "station_count": 51,
       "last_data_date": "2026-06-17",
       "forecast_days": 30
@@ -54,20 +48,17 @@
       "confidence": "stable",
       "tag": "Low Variance / Stable",
       "tag_color": "blue",
-      "reason": "Accuracy=68.4%, V9 XGBoost Engine",
-      "accuracy_percentage": 68.42,
-      "test_mae": 1.91,
-      "mase": 1.29,
-      "station_count": 51,
-      "last_data_date": "2026-06-17",
-      "forecast_days": 30
+      "reason": "Accuracy=69.6%, V9.4 Geospatial Ensemble",
+      "accuracy_percentage": 69.63,
+      "test_mae": 1.83,
+      "mase": 1.32
     }
   },
   "accuracy": {
-    "mae": 10.08,
-    "accuracy_percentage": 34.9,
+    "mae": 10.01,
+    "accuracy_percentage": 35.8,
     "source": "backtest",
-    "sample_count": 4878,
+    "sample_count": 3855,
     "live_validation_count": 0,
     "note": "Live metrics require 100+ validated completed forecasts. Backtest metrics are recent one-step checks against known actuals."
   }

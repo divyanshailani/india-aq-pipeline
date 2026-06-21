@@ -5,9 +5,9 @@
 # Global AQ Intelligence — ML Pipeline
 
 [![Live Deployment](https://img.shields.io/badge/Live_Deployment-global--aq--intelligence.vercel.app-10B981?style=for-the-badge&logo=vercel)](https://global-aq-intelligence.vercel.app)
-> **Currently running the V9.4 Geospatial Ensemble Router.**
+> **Currently running the V11 3D Atmospheric Ensemble Router.**
 
-[📜 Read the full V9.4 Changelog & Architecture History here](CHANGELOG.md)
+[📜 Read the full V11 Changelog & Architecture History here](CHANGELOG.md)
 
 ![Dashboard Screenshot](https://raw.githubusercontent.com/divyanshailani/global-aq-intelligence-web/main/public/images/ui_dashboard.png)
 > End-to-end PM2.5 forecasting engine for 4 countries. Autonomous daily pipeline: fetch → engineer → predict → export → sync.
@@ -42,18 +42,19 @@ NASA POWER ──┼──▶ PostgreSQL ──▶ Feature Engineering ──▶
 Open-Meteo ──┘                   (lag/rolling/delta)     (GBR × 16)    (site_data/)    (auto-sync)
 ```
 
-### Model Architecture: V9.4 Geospatial Ensemble Router
+### Model Architecture: V11 3D Atmospheric Ensemble Router
 
-**V9.4 Global Unified Architecture (Native XGBoost):**
-We migrated from a single model to a dynamic ensemble router. The core mathematical foundation builds on the V9 XGBoost engine with several major enhancements:
+**V11 Global Unified Architecture (Native XGBoost):**
+We migrated from a single model to a dynamic ensemble router. The core mathematical foundation builds on the V11 XGBoost engine with several major enhancements:
 - **Dynamic Routing**: Great Britain relies on the V9 physics-backed persistence model for long-term horizons, while all other regions/horizons use the V9.4 delta engine.
 - **Delta Target Transformation ($\Delta Y$)**: The engine predicts 'Velocity' ($\Delta Y = Y_t - Y_{t-1}$) to force the model to explicitly correct the naive baseline, unlocking significant long-term stability.
 - **SUOMI VIIRS Spatial 'Blast Radius' Engine**: Uses the Haversine formula to bridge satellite fire coordinates with ground stations, creating a 100km `fire_density` and `fire_radiative_power` dynamic feature set.
 - **Fading Memory (EMA)**: An Exponential Moving Average (EMA) gives higher weight to recent micro-fluctuations, crushing the 1-day horizon underfitting problem.
+- **3D Atmospheric Depth (AOD)**: Live injection of Aerosol Optical Depth from Open-Meteo satellite arrays to physically map vertical pollution density.
 
 ---
 
-## Performance (V9.4 Geospatial Ensemble)
+## Performance (V11 Geospatial Ensemble)
 
 ![Forecast Horizons EDA](./plots/forecast_horizons_v9_4.png)
 
@@ -178,6 +179,7 @@ Output JSONs are written to `data/site_data/` and automatically synced to `../gl
 | v8 | Global Unified | Horizon-Aligned Lags & Volatility Matrix |
 | v9 | Global Unified | Native XGBoost, Horizon-Aligned Lags & Volatility Matrix |
 | v9.4 | Geospatial Ensemble | Delta Target Transformation, VIIRS Spatial Blast Radius, EMA Fading Memory |
+| v11 | 3D Atmospheric Ensemble | 3D Aerosol Optical Depth (AOD) via Open-Meteo Satellite Sync |
 
 ---
 
