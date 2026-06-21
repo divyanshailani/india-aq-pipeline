@@ -1,31 +1,31 @@
 {
-  "generated_at": "2026-06-21T14:51:26.877139",
-  "last_pipeline_run": "2026-06-21T14:51:26.877189",
-  "mae": 10.01,
-  "accuracy_percentage": 35.8,
-  "source": "backtest",
-  "sample_count": 3855,
+  "generated_at": "2026-06-21T17:11:12.802061",
+  "last_pipeline_run": "2026-06-21T17:11:12.802067",
+  "mae": null,
+  "accuracy_percentage": null,
+  "source": "none",
+  "sample_count": 0,
   "live_validation_count": 0,
   "training_metrics": {
     "IN": {
-      "accuracy_percentage": 74.23,
-      "mae": 9.91,
-      "mase": 2.82
+      "accuracy_percentage": 73.96,
+      "mae": 10.02,
+      "mase": null
     },
     "US": {
-      "accuracy_percentage": 69.82,
-      "mae": 2.21,
-      "mase": 1.82
+      "accuracy_percentage": 69.33,
+      "mae": 2.24,
+      "mase": null
     },
     "GB": {
-      "accuracy_percentage": 65.15,
-      "mae": 2.22,
-      "mase": 1.74
+      "accuracy_percentage": 64.87,
+      "mae": 2.24,
+      "mase": null
     },
     "AU": {
-      "accuracy_percentage": 69.63,
-      "mae": 1.83,
-      "mase": 1.32
+      "accuracy_percentage": 69.79,
+      "mae": 1.82,
+      "mase": null
     }
   },
   "confidence_explanation": {

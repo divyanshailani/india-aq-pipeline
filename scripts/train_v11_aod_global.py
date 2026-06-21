@@ -212,6 +212,16 @@ def train_v11_horizon_model(df_global, viirs, country_code, horizon):
         "tree_method": "hist",
         "random_state": 42
     }
+    
+    param_path = os.path.join(MODEL_DIR, "best_params_per_country.json")
+    if os.path.exists(param_path):
+        with open(param_path, "r") as f:
+            best_all = json.load(f)
+        if country_code in best_all:
+            best_cc = best_all[country_code]
+            for k in ["max_depth", "learning_rate", "n_estimators", "subsample", "colsample_bytree"]:
+                if k in best_cc:
+                    params[k] = best_cc[k]
 
     model = xgb.XGBRegressor(**params)
     model.fit(X_train, y_train_delta, eval_set=[(X_test, y_test_delta)], verbose=False)

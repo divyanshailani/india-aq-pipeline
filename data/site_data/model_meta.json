@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-06-21T14:51:26.876739",
-  "model_version": "v9_xgboost_global",
+  "generated_at": "2026-06-21T17:11:12.801631",
+  "model_version": "v11_xgboost_global",
   "countries": {
     "IN": {
       "name": "India",
@@ -9,10 +9,12 @@
       "confidence": "high",
       "tag": "High Confidence",
       "tag_color": "green",
-      "reason": "Accuracy=74.2%, V9.4 Geospatial Ensemble",
-      "accuracy_percentage": 74.23,
-      "test_mae": 9.91,
-      "mase": 2.82
+      "reason": "Accuracy=74.0%, V11 3D Atmospheric Ensemble",
+      "accuracy_percentage": 73.96,
+      "test_mae": 10.02,
+      "station_count": 51,
+      "last_data_date": "2026-06-17",
+      "forecast_days": 30
     },
     "US": {
       "name": "United States",
@@ -21,10 +23,12 @@
       "confidence": "high",
       "tag": "High Confidence",
       "tag_color": "green",
-      "reason": "Accuracy=69.8%, V9.4 Geospatial Ensemble",
-      "accuracy_percentage": 69.82,
-      "test_mae": 2.21,
-      "mase": 1.82
+      "reason": "Accuracy=69.3%, V11 3D Atmospheric Ensemble",
+      "accuracy_percentage": 69.33,
+      "test_mae": 2.24,
+      "station_count": 51,
+      "last_data_date": "2026-06-16",
+      "forecast_days": 30
     },
     "GB": {
       "name": "United Kingdom",
@@ -33,10 +37,9 @@
       "confidence": "experimental",
       "tag": "Experimental: Limited Seasonal Data",
       "tag_color": "yellow",
-      "reason": "Accuracy=65.2%, V9.4 Geospatial Ensemble",
-      "accuracy_percentage": 65.15,
-      "test_mae": 2.22,
-      "mase": 1.74,
+      "reason": "Accuracy=64.9%, V11 3D Atmospheric Ensemble (Long-Term: V9)",
+      "accuracy_percentage": 64.87,
+      "test_mae": 2.24,
       "station_count": 51,
       "last_data_date": "2026-06-17",
       "forecast_days": 30
@@ -48,17 +51,19 @@
       "confidence": "stable",
       "tag": "Low Variance / Stable",
       "tag_color": "blue",
-      "reason": "Accuracy=69.6%, V9.4 Geospatial Ensemble",
-      "accuracy_percentage": 69.63,
-      "test_mae": 1.83,
-      "mase": 1.32
+      "reason": "Accuracy=69.8%, V11 3D Atmospheric Ensemble",
+      "accuracy_percentage": 69.79,
+      "test_mae": 1.82,
+      "station_count": 51,
+      "last_data_date": "2026-06-17",
+      "forecast_days": 30
     }
   },
   "accuracy": {
-    "mae": 10.01,
-    "accuracy_percentage": 35.8,
-    "source": "backtest",
-    "sample_count": 3855,
+    "mae": null,
+    "accuracy_percentage": null,
+    "source": "none",
+    "sample_count": 0,
     "live_validation_count": 0,
     "note": "Live metrics require 100+ validated completed forecasts. Backtest metrics are recent one-step checks against known actuals."
   }
