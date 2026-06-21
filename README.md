@@ -46,7 +46,7 @@ Open-Meteo ──┘                   (lag/rolling/delta)     (GBR × 16)    (s
 
 **V11 Global Unified Architecture (Native XGBoost):**
 We migrated from a single model to a dynamic ensemble router. The core mathematical foundation builds on the V11 XGBoost engine with several major enhancements:
-- **Dynamic Routing**: Great Britain relies on the V9 physics-backed persistence model for long-term horizons, while all other regions/horizons use the V9.4 delta engine.
+- **Dynamic Routing**: Great Britain relies on the V9 physics-backed persistence model for long-term horizons, while all other regions/horizons use the V11 engine.
 - **Delta Target Transformation ($\Delta Y$)**: The engine predicts 'Velocity' ($\Delta Y = Y_t - Y_{t-1}$) to force the model to explicitly correct the naive baseline, unlocking significant long-term stability.
 - **SUOMI VIIRS Spatial 'Blast Radius' Engine**: Uses the Haversine formula to bridge satellite fire coordinates with ground stations, creating a 100km `fire_density` and `fire_radiative_power` dynamic feature set.
 - **Fading Memory (EMA)**: An Exponential Moving Average (EMA) gives higher weight to recent micro-fluctuations, crushing the 1-day horizon underfitting problem.
@@ -58,7 +58,7 @@ We migrated from a single model to a dynamic ensemble router. The core mathemati
 
 ![Forecast Horizons EDA](./plots/forecast_horizons_v11.png)
 
-The shift to the V11 3D Atmospheric Engine yielded a breakthrough in short-term volatility. By mapping the true vertical density of the atmosphere (AOD), the model correctly bounds extreme stagnation events, plummeting the MAE on extreme spikes (PM2.5 > 150) down to 76.06 µg/m³. The Delta Target transformation continues to anchor long-term stability across all oceanic and continental regions.
+The shift to the V11 3D Atmospheric Engine yielded a breakthrough in short-term volatility. By mapping the true vertical density of the atmosphere (AOD), the model correctly bounds extreme stagnation events. Note: The MAE drop to 76.06 µg/m³ applies *strictly* to the stratified Extreme-Spike slice (where True PM2.5 > 150 µg/m³), proving the AOD physics works in worst-case scenarios. Do not conflate this with the general `h=1` accuracy, which encompasses standard air quality days. The Delta Target transformation continues to anchor long-term stability across all oceanic and continental regions.
 
 | Country | Horizon | NMAE | MASE | Accuracy (%) |
 | :--- | :--- | :--- | :--- | :--- |

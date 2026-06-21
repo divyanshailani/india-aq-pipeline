@@ -3,10 +3,10 @@ Global AQ Intelligence — Prediction Pipeline
 ==============================================
 One-click pipeline: fetch → validate → predict → export JSON → sync frontend.
 
-Architecture: V7 Direct Horizon Models + Weather-Weighted Interpolation
-  - Anchor points (h1, h7, h14, h30) are direct GBR model outputs
-  - All intermediate days are weather-weighted interpolations between anchors
-  - Thermodynamic modifiers: rain washout, wind dispersion, stagnation spike
+Architecture: V11 3D Atmospheric Ensemble
+  - Anchor points (h1, h7, h14, h30) are direct XGBoost model outputs
+  - 3D AOD vectors from Copernicus CAMS fused with VIIRS spatial tracking
+  - GB horizons 14 & 30 dynamically route to V9 Baseline
   - Future weather (Open-Meteo 16-day) injected per-station, per-date
 
 Usage:
@@ -57,7 +57,7 @@ COUNTRY_META = {
         "confidence": "high",
         "tag": "High Confidence",
         "tag_color": "green",
-        "reason": "Pending V9 Metadata Sync...",
+        "reason": "Pending V11 Metadata Sync...",
         "accuracy_percentage": 0.0,
         "test_mae": 0.0,
     },
@@ -68,7 +68,7 @@ COUNTRY_META = {
         "confidence": "high",
         "tag": "High Confidence",
         "tag_color": "green",
-        "reason": "Pending V9 Metadata Sync...",
+        "reason": "Pending V11 Metadata Sync...",
         "accuracy_percentage": 0.0,
         "test_mae": 0.0,
     },
@@ -79,7 +79,7 @@ COUNTRY_META = {
         "confidence": "experimental",
         "tag": "Experimental: Limited Seasonal Data",
         "tag_color": "yellow",
-        "reason": "Pending V9 Metadata Sync...",
+        "reason": "Pending V11 Metadata Sync...",
         "accuracy_percentage": 0.0,
         "test_mae": 0.0,
     },
@@ -90,7 +90,7 @@ COUNTRY_META = {
         "confidence": "stable",
         "tag": "Low Variance / Stable",
         "tag_color": "blue",
-        "reason": "Pending V9 Metadata Sync...",
+        "reason": "Pending V11 Metadata Sync...",
         "accuracy_percentage": 0.0,
         "test_mae": 0.0,
     },
@@ -225,8 +225,8 @@ def backtest_recent(conn, n_days=7):
     country_metrics = {}
 
     for cc in COUNTRIES:
-        meta_path = os.path.join(V9_MODEL_DIR, f"{cc}_pm25_h1_meta.json")
-        model_path = os.path.join(V9_MODEL_DIR, f"{cc}_pm25_h1_xgb.json")
+        meta_path = os.path.join(V11_MODEL_DIR, f"{cc}_pm25_h1_meta.json")
+        model_path = os.path.join(V11_MODEL_DIR, f"{cc}_pm25_h1_xgb.json")
 
         if not os.path.exists(model_path):
             continue
@@ -751,7 +751,7 @@ def run_predictions(conn, run_id):
     total_predictions = 0
 
     for cc in COUNTRIES:
-        print(f"\n  {COUNTRY_META[cc]['flag']} {cc}: Generating v9 direct forecasts...")
+        print(f"\n  {COUNTRY_META[cc]['flag']} {cc}: Generating V11 direct forecasts...")
 
         # Get recent features only from active stations.
         df = get_recent_features(conn, cc)
@@ -900,7 +900,7 @@ def export_site_data(predictions, metric_mae, metric_acc, metric_source,
     # Combined metadata
     model_meta = {
         "generated_at": datetime.now().isoformat(),
-        "model_version": "v9_xgboost_global",
+        "model_version": "v11_xgboost_global",
         "countries": {},
         "accuracy": {
             "mae": round(metric_mae, 2) if metric_mae is not None else None,
@@ -990,9 +990,9 @@ def main():
         """, (str(run_id),))
     conn.commit()
 
-    # Dynamically update COUNTRY_META from V9.4 models
+    # Dynamically update COUNTRY_META from V11 models
     for cc in COUNTRIES:
-        meta_path = os.path.join(V9_4_MODEL_DIR, f"{cc}_pm25_h1_meta.json")
+        meta_path = os.path.join(V11_MODEL_DIR, f"{cc}_pm25_h1_meta.json")
         if os.path.exists(meta_path):
             with open(meta_path, "r") as f:
                 meta = json.load(f)
@@ -1001,7 +1001,10 @@ def main():
             mae = metrics.get("test_mae", 0)
             COUNTRY_META[cc]["accuracy_percentage"] = acc
             COUNTRY_META[cc]["test_mae"] = mae
-            COUNTRY_META[cc]["reason"] = f"Accuracy={acc:.1f}%, V9.4 Geospatial Ensemble"
+            if cc == "GB":
+                COUNTRY_META[cc]["reason"] = f"Accuracy={acc:.1f}%, V11 3D Atmospheric Ensemble (Long-Term: V9)"
+            else:
+                COUNTRY_META[cc]["reason"] = f"Accuracy={acc:.1f}%, V11 3D Atmospheric Ensemble"
 
     # Phase 1: Check last run
     last_run = get_last_run_date(conn)

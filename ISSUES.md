@@ -172,3 +172,13 @@ We hypothesized that injecting non-linear accumulation physics and upwind spatia
 The V10.1 logic backfired. It worsened the MAE on extreme spikes from 87.48 to 91.62 µg/m³, and slightly degraded overall MAE. By engineering hyper-specific synthetic indices, we tied variables together into a single column, which forced the XGBoost trees down a specific path and stripped away their ability to find subtle micro-patterns in the raw data (Raw Total Fire Power, Raw Wind Speed).
 
 We mathematically proved that **V9.4** (Delta Targets, Synthetic Memory, and Raw 100km Blast Radius) is the absolute ceiling for the current dataset. Hand-engineered physics indices were abandoned in favor of raw statistical signals.
+
+---
+
+## 15. The V11 3D Atmospheric Ensemble & The GB Exception
+**Issue:**
+After V10's failure, we realized that 2D satellite coordinates (VIIRS) cannot capture the true *volume* and vertical column density of pollution. Smoke blowing overhead does not always touch ground sensors. Furthermore, V10's hand-engineered stagnation index failed because Gradient Boosting models inherently struggle with erratic synthetic splits; XGBoost prefers raw, continuous statistical signals over hardcoded, non-linear mathematical ratios.
+
+**Solution (The V11 Engine):**
+1. **Raw AOD Signals:** We abandoned synthetic physics indices and injected live, raw 3D Aerosol Optical Depth (AOD) vectors from the European CAMS framework via Open-Meteo. AOD provides the exact physical measurement of vertical atmospheric density. XGBoost effortlessly mapped the raw AOD signals to stagnation spikes, dropping the Extreme-Spike MAE (PM2.5 > 150) to 76.06 µg/m³ without disrupting the general horizon accuracy.
+2. **The GB Exception (Dynamic Routing):** We hardcoded a routing exception for Great Britain at $h=14$ and $h=30$. Great Britain has an oceanic climate with virtually no wildfires and extremely stable long-term pollution patterns. For this specific region, satellite AOD introduces unnecessary variance. Thus, GB intentionally falls back to the V9 historical persistence engine for long horizons, as historical baselines are a much stronger predictor than 3D AOD for pure oceanic climates.
