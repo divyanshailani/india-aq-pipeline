@@ -46,8 +46,12 @@
     "wind_v": 0.0
   },
   "metrics": {
-    "accuracy_percentage": 0.0,
-    "test_mae": 0.0,
-    "note": "Trained on 100% full dataset for maximum recency."
+    "test_r2": 0.1636,
+    "test_mae": 3.02,
+    "test_rmse": 5.23,
+    "nmae": 0.413,
+    "mase": 0.71,
+    "accuracy_percentage": 58.7,
+    "note": "Trained on 100% full dataset for maximum recency. Metrics carried forward from holdout evaluation."
   }
 }

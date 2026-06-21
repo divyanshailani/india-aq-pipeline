@@ -67,6 +67,21 @@ def train_full_v11(df_global, viirs, country_code, horizon, best_all):
     model_path = os.path.join(MODEL_DIR, f"{country_code}_pm25_h{horizon}_xgb.json")
     model.save_model(model_path)
 
+    meta_path = os.path.join(MODEL_DIR, f"{country_code}_pm25_h{horizon}_meta.json")
+    
+    existing_metrics = {
+        "accuracy_percentage": 0.0,
+        "test_mae": 0.0,
+        "note": "Trained on 100% full dataset for maximum recency."
+    }
+    
+    if os.path.exists(meta_path):
+        with open(meta_path, "r") as f:
+            old_meta = json.load(f)
+            if "metrics" in old_meta and old_meta["metrics"].get("accuracy_percentage", 0) > 0:
+                existing_metrics = old_meta["metrics"]
+                existing_metrics["note"] = "Trained on 100% full dataset for maximum recency. Metrics carried forward from holdout evaluation."
+
     meta = {
         "country": country_code,
         "model": "XGBRegressor",
@@ -74,13 +89,8 @@ def train_full_v11(df_global, viirs, country_code, horizon, best_all):
         "horizon_days": horizon,
         "features": features,
         "feature_medians": medians,
-        "metrics": {
-            "accuracy_percentage": 0.0,
-            "test_mae": 0.0,
-            "note": "Trained on 100% full dataset for maximum recency."
-        }
+        "metrics": existing_metrics
     }
-    meta_path = os.path.join(MODEL_DIR, f"{country_code}_pm25_h{horizon}_meta.json")
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
 
