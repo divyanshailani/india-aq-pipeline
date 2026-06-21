@@ -1,7 +1,7 @@
 {
   "country": "AU",
   "model": "XGBRegressor",
-  "version": "v11_xgboost_aod",
+  "version": "v11_xgboost_aod_full",
   "horizon_days": 14,
   "features": [
     "pm25_lag_14",
@@ -25,32 +25,29 @@
     "wind_v"
   ],
   "feature_medians": {
-    "pm25_lag_14": 5.133703000000001,
-    "pm25_ema_3d": 5.296141633110584,
+    "pm25_lag_14": 5.1725,
+    "pm25_ema_3d": 5.346368197822786,
     "month_sin": 1.2246467991473532e-16,
     "month_cos": -1.8369701987210297e-16,
-    "day_of_year_sin": 0.03439806061360801,
-    "day_of_year_cos": -0.050510617185222886,
-    "future_temp": 16.6,
+    "day_of_year_sin": 0.017201575418260506,
+    "day_of_year_cos": -0.046215046983708354,
+    "future_temp": 16.8,
     "future_wind": 17.8,
-    "future_precip": 0.2,
-    "pm25_momentum": 0.08579150000000046,
+    "future_precip": 0.1,
+    "pm25_momentum": 0.08499999999999996,
     "future_temp_momentum": 0.10000000000000142,
     "future_wind_momentum": -0.10000000000000142,
     "fire_density_100km": 2.0,
-    "fire_radiative_power_total": 660.6800000000001,
-    "fire_wind_interaction": 11720.421000000002,
-    "aod_mean_lag_1": 0.10458333333333335,
+    "fire_radiative_power_total": 664.12,
+    "fire_wind_interaction": 11922.944000000001,
+    "aod_mean_lag_1": 0.10416666666666667,
     "aod_max_lag_1": 0.16,
     "wind_u": 1.0,
     "wind_v": 0.0
   },
   "metrics": {
-    "test_r2": 0.3006,
-    "test_mae": 2.12,
-    "test_rmse": 3.1,
-    "nmae": 0.3494,
-    "mase": 0.66,
-    "accuracy_percentage": 65.06
+    "accuracy_percentage": 0.0,
+    "test_mae": 0.0,
+    "note": "Trained on 100% full dataset for maximum recency."
   }
 }
