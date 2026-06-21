@@ -1,0 +1,30 @@
+{
+  "IN": {
+    "max_depth": 9,
+    "learning_rate": 0.02621318781456901,
+    "n_estimators": 285,
+    "subsample": 0.7467172139736653,
+    "colsample_bytree": 0.9892392007573247
+  },
+  "US": {
+    "max_depth": 9,
+    "learning_rate": 0.044432690940697656,
+    "n_estimators": 257,
+    "subsample": 0.8837659833043602,
+    "colsample_bytree": 0.8643251830360753
+  },
+  "GB": {
+    "max_depth": 9,
+    "learning_rate": 0.06519852228262837,
+    "n_estimators": 529,
+    "subsample": 0.744161359791296,
+    "colsample_bytree": 0.6884184063905635
+  },
+  "AU": {
+    "max_depth": 6,
+    "learning_rate": 0.04318730219278607,
+    "n_estimators": 343,
+    "subsample": 0.9448532027499742,
+    "colsample_bytree": 0.6574059115160198
+  }
+}
