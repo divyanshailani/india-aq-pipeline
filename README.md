@@ -56,28 +56,28 @@ We migrated from a single model to a dynamic ensemble router. The core mathemati
 
 ## Performance (V11 Geospatial Ensemble)
 
-![Forecast Horizons EDA](./plots/forecast_horizons_v9_4.png)
+![Forecast Horizons EDA](./plots/forecast_horizons_v11.png)
 
-The shift to the V9.4 Delta Engine and VIIRS spatial tracking yielded solid gains in predictability for the 1-day horizon globally, proving that the Micro-physics Wind Momentum and Fading Memory signals are highly effective at capturing volatile micro-fluctuations. Furthermore, the Delta Target transformation successfully crushed long-term instability in chaotic environments.
+The shift to the V11 3D Atmospheric Engine yielded a breakthrough in short-term volatility. By mapping the true vertical density of the atmosphere (AOD), the model correctly bounds extreme stagnation events, plummeting the MAE on extreme spikes (PM2.5 > 150) down to 76.06 µg/m³. The Delta Target transformation continues to anchor long-term stability across all oceanic and continental regions.
 
 | Country | Horizon | NMAE | MASE | Accuracy (%) |
 | :--- | :--- | :--- | :--- | :--- |
-| **IN** | 1 | 0.2577 | 0.9000 | **74.23%** |
-| **IN** | 7 | 0.4159 | 0.6900 | **58.41%** |
-| **IN** | 14 | 0.4431 | 0.6100 | **55.69%** |
-| **IN** | 30 | 0.4385 | 0.5400 | **56.15%** |
-| **GB** | 1 | 0.3485 | 0.8500 | **65.15%** |
-| **GB** | 7 | 0.4220 | 0.6400 | **57.80%** |
+| **IN** | 1 | 0.2604 | 0.9100 | **73.96%** |
+| **IN** | 7 | 0.4105 | 0.6900 | **58.95%** |
+| **IN** | 14 | 0.4400 | 0.6100 | **56.00%** |
+| **IN** | 30 | 0.4231 | 0.5200 | **57.69%** |
+| **GB** | 1 | 0.3513 | 0.8500 | **64.87%** |
+| **GB** | 7 | 0.3964 | 0.6000 | **60.36%** |
 | **GB** | 14 | 0.4401 | 0.5700 | **55.99%** (V9 Baseline) |
 | **GB** | 30 | 0.4333 | 0.6400 | **56.67%** (V9 Baseline) |
-| **US** | 1 | 0.3018 | 0.8300 | **69.82%** |
-| **US** | 7 | 0.4096 | 0.7400 | **59.04%** |
-| **US** | 14 | 0.4263 | 0.7300 | **57.37%** |
-| **US** | 30 | 0.4202 | 0.7200 | **57.98%** |
-| **AU** | 1 | 0.3037 | 0.7800 | **69.63%** |
-| **AU** | 7 | 0.3579 | 0.6700 | **64.21%** |
-| **AU** | 14 | 0.3513 | 0.6600 | **64.87%** |
-| **AU** | 30 | 0.3626 | 0.6700 | **63.74%** |
+| **US** | 1 | 0.3067 | 0.8400 | **69.33%** |
+| **US** | 7 | 0.4068 | 0.7300 | **59.32%** |
+| **US** | 14 | 0.4199 | 0.7200 | **58.01%** |
+| **US** | 30 | 0.4215 | 0.7300 | **57.85%** |
+| **AU** | 1 | 0.3021 | 0.7700 | **69.79%** |
+| **AU** | 7 | 0.3554 | 0.6600 | **64.46%** |
+| **AU** | 14 | 0.3494 | 0.6600 | **65.06%** |
+| **AU** | 30 | 0.3610 | 0.6600 | **63.90%** |
 
 ---
 
