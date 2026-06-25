@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [11.1.0] - Live Weather Injection & Database Healing
+
+### 🚀 Issues Tackled & System Upgrades
+- **The India Matrix Glitch (The 4 AM Washout)**: Investigated a massive MAE spike (25.96) in India on June 25th. Actual PM2.5 crashed from ~32 down to 14.61 due to monsoon rain, but the model blindly predicted a rise to 40.57.
+- **The Inference Blindspot**: First-principles analysis revealed that the XGBoost model was completely starved of weather data during live inference. The bulk data collectors (`fetch_openmeteo_all.py`, `fetch_nasa_power.py`) were hardcoded to historical bounds (ending mid-June) and `run_daily_etl.py` ONLY synced PM2.5 sensor data. Without precipitation features, the tree defaulted to its historical no-rain baseline.
+- **Database Healing (Targeted Backfill)**: Engineered and deployed `scripts/backfill_recent_weather.py` and `scripts/backfill_recent_aod.py` to surgically fetch OpenMeteo weather and AOD data for the missing June 21-25 gap, directly patching the `daily_features` table without triggering the massive historical backfill logic.
+- **The "Hard Switch" Concept (is_raining_now)**: Validated a core architectural upgrade for the live pipeline: injecting a real-time binary flag (`is_raining_now = 1`) to explicitly override standard model paths and force the decision trees down the thermodynamic "Wet Scavenging" route instantly.
+
 ## [11.0.0] - V11 3D Atmospheric Ensemble Active
 
 ### 🚀 Recent Updates (V11)
