@@ -111,7 +111,9 @@ def main():
     start_time = time.time()
     
     for i, row in stations.iterrows():
-        sid, lat, lon = row["id"], row["latitude"], row["longitude"]
+        sid = int(row["id"])
+        lat = float(row["latitude"])
+        lon = float(row["longitude"])
         print(f"[{i+1}/{total}] Fetching Station {sid} ({lat:.2f}, {lon:.2f})...", end=" ", flush=True)
         
         try:
@@ -123,10 +125,12 @@ def main():
             else:
                 print("No data.")
             
-            # Respect API limits (OpenMeteo asks for max 10,000 per day, but rate limits bursts too)
-            time.sleep(0.5)
+            # Respect API limits (OpenMeteo asks for max 10,000 per day, and has minutely limits)
+            time.sleep(1.5)
         except Exception as e:
+            conn.rollback()
             print(f"Error: {e}")
+            time.sleep(2.0)
             
     elapsed = time.time() - start_time
     print(f"\n🎉 Bulk Backfill Complete in {elapsed:.1f}s!")
