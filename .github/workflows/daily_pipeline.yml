@@ -47,14 +47,25 @@ jobs:
           echo "Starting Cleaning, Feature Engineering, and Weather Backfill..."
           python scripts/run_daily_etl.py
 
-      - name: 🧠 Step 2 - Run 30-Day Predictions
+      - name: 🧠 Step 2 - Run 30-Day Predictions & Deploy
+        env:
+          FRONTEND_PAT: ${{ secrets.FRONTEND_PAT }}
         run: |
+          echo "Cloning frontend repo to allow prediction sync..."
+          cd ..
+          git clone https://${FRONTEND_PAT}@github.com/divyanshailani/global-aq-intelligence.git global-aq-intelligence
+          
+          # Go back to pipeline dir to run predictions
+          cd pow-eda-pipeline
+
           echo "Running XGBoost v11 Models..."
           python scripts/predict_pipeline.py
-
-      # Step 3 (Deploy) is commented out because it requires SSH keys to clone/push to the separate frontend repo.
-      # If your frontend is connected to a Supabase/Postgres DB directly, or reads from this repo, you don't need it.
-      # - name: 🚀 Step 3 - Deploy JSON to Frontend Repo
-      #   run: |
-      #     echo "Pushing new predictions to the UI..."
-      #     # You would need an SSH deploy key or Personal Access Token (PAT) configured here.
+          
+          # The pipeline script automatically copied data to ../global-aq-intelligence/public/data
+          echo "Pushing new predictions to the UI..."
+          cd ../global-aq-intelligence
+          git config user.name "Global AQI Bot"
+          git config user.email "bot@globalaqi.com"
+          git add public/data/
+          git commit -m "auto: Daily AI Predictions Update 🚀" || echo "No changes to commit"
+          git push
