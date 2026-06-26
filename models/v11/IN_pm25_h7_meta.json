@@ -1,7 +1,7 @@
 {
   "country": "IN",
   "model": "XGBRegressor",
-  "version": "v11_xgboost_aod_full",
+  "version": "v11_xgboost_aod_optuna",
   "horizon_days": 7,
   "features": [
     "pm25_lag_7",
@@ -13,6 +13,8 @@
     "future_temp",
     "future_wind",
     "future_precip",
+    "rolling_3day_precip",
+    "aod_volatility_index",
     "pm25_momentum",
     "future_temp_momentum",
     "future_wind_momentum",
@@ -25,33 +27,44 @@
     "wind_v"
   ],
   "feature_medians": {
-    "pm25_lag_7": 46.3,
-    "pm25_ema_3d": 48.107814005801316,
-    "month_sin": 0.49999999999999994,
+    "pm25_lag_7": 50.72161149825784,
+    "pm25_ema_3d": 52.53488020651839,
+    "month_sin": 0.8660254037844386,
     "month_cos": 6.123233995736766e-17,
-    "day_of_year_sin": 0.6350683134867438,
-    "day_of_year_cos": 0.22701082094141847,
-    "future_temp": 26.1,
-    "future_wind": 15.2,
+    "day_of_year_sin": 0.6740694616546162,
+    "day_of_year_cos": 0.2934339689665273,
+    "future_temp": 25.4,
+    "future_wind": 15.0,
     "future_precip": 0.0,
-    "pm25_momentum": 0.0,
-    "future_temp_momentum": 0.09999999999999998,
+    "rolling_3day_precip": 0.0,
+    "aod_volatility_index": 0.0,
+    "pm25_momentum": 0.0391923950815265,
+    "future_temp_momentum": 0.09999999999999787,
     "future_wind_momentum": 0.0,
-    "fire_density_100km": 2.0,
-    "fire_radiative_power_total": 689.04,
-    "fire_wind_interaction": 11254.377,
+    "fire_density_100km": 0.0,
+    "fire_radiative_power_total": 0.0,
+    "fire_wind_interaction": 0.0,
     "aod_mean_lag_1": 0.4375,
     "aod_max_lag_1": 0.575,
-    "wind_u": 0.2621891786408649,
-    "wind_v": -0.026176948307873545
+    "wind_u": 0.15298583628403808,
+    "wind_v": -0.4099230338415726
+  },
+  "best_params": {
+    "n_estimators": 500,
+    "max_depth": 5,
+    "learning_rate": 0.02944388085381175,
+    "subsample": 0.8877459247377724,
+    "colsample_bytree": 0.896028478702988,
+    "min_child_weight": 9,
+    "tree_method": "hist",
+    "random_state": 42
   },
   "metrics": {
-    "test_r2": 0.3006,
-    "test_mae": 15.86,
-    "test_rmse": 28.17,
-    "nmae": 0.4071,
+    "test_r2": 0.3332,
+    "test_mae": 15.72,
+    "test_rmse": 27.43,
+    "nmae": 0.4046,
     "mase": 0.68,
-    "accuracy_percentage": 59.29,
-    "note": "Trained on 100% full dataset for maximum recency. Metrics carried forward from holdout evaluation."
+    "accuracy_percentage": 59.54
   }
 }

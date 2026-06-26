@@ -100,7 +100,7 @@ def plot_best_station():
     
     out_dir = os.path.join(os.path.dirname(__file__), "..", "plots")
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, 'forecast_horizons_v11.png')
+    out_path = os.path.join(out_dir, 'forecast_horizons_v11_new.png')
     plt.savefig(out_path, dpi=150)
     print(f"\nPlot saved: {out_path}")
 

@@ -8,9 +8,11 @@ import xgboost as xgb
 import numpy as np
 import pandas as pd
 import psycopg2
+import optuna
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 warnings.filterwarnings("ignore")
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.config import DB_CONFIG
@@ -35,6 +37,8 @@ def load_v11_data(conn, country_code):
                df.om_wind_speed as future_wind,
                df.om_precipitation as future_precip,
                df.wind_direction,
+               df.rolling_3day_precip,
+               df.aod_volatility_index,
                s.latitude as station_lat,
                s.longitude as station_lon,
                aod.aod_mean,
@@ -136,10 +140,15 @@ def build_v11_features(df, viirs, horizon):
     df_v11["fire_wind_interaction"] = df_v11["fire_radiative_power_total"] * df_v11["future_wind"]
     df_v11["target_delta"] = df_v11["value"] - df_v11[lag_col]
     
+    # ADD NEW ADVANCED WEATHER FEATURES
+    df_v11["rolling_3day_precip"] = df_v11["rolling_3day_precip"].fillna(0)
+    df_v11["aod_volatility_index"] = df_v11["aod_volatility_index"].fillna(0)
+    
     features = [
         lag_col, "pm25_ema_3d",
         "month_sin", "month_cos", "day_of_year_sin", "day_of_year_cos",
         "future_temp", "future_wind", "future_precip",
+        "rolling_3day_precip", "aod_volatility_index",
         "pm25_momentum", "future_temp_momentum", "future_wind_momentum",
         "fire_density_100km", "fire_radiative_power_total",
         "fire_wind_interaction",
@@ -166,12 +175,36 @@ def temporal_split(df, target_col, test_ratio=0.20):
     if not train_parts: return pd.DataFrame(), pd.DataFrame()
     return pd.concat(train_parts, ignore_index=True), pd.concat(test_parts, ignore_index=True)
 
-def train_v11_horizon_model(df_global, viirs, country_code, horizon):
+def objective(trial, X_train, y_train_delta, X_test, y_test, lag_naive_test, train_lag_col, test_lag_col):
+    params = {
+        "n_estimators": trial.suggest_int("n_estimators", 100, 500, step=50),
+        "max_depth": trial.suggest_int("max_depth", 3, 10),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+        "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+        "tree_method": "hist",
+        "random_state": 42
+    }
+    
+    model = xgb.XGBRegressor(**params)
+    model.fit(X_train, y_train_delta, verbose=False)
+    
+    y_pred_delta_test = model.predict(X_test)
+    y_pred_test = y_pred_delta_test + test_lag_col
+    
+    test_mae = mean_absolute_error(y_test, y_pred_test)
+    naive_mae = mean_absolute_error(y_test, lag_naive_test)
+    
+    mase = test_mae / naive_mae if naive_mae > 0 else float('inf')
+    return mase
+
+def train_and_optimize(df_global, viirs, country_code, horizon):
     if country_code == "GB" and horizon in [14, 30]:
         print(f"\n  ── {country_code}  h={horizon:>2}d ── SKIPPING (Fallback to V9)")
         return None
         
-    print(f"\n  ── {country_code}  h={horizon:>2}d (V11 AOD) ──")
+    print(f"\n  ── {country_code}  h={horizon:>2}d (V11 AOD + Physics) ──")
     if len(df_global) < 100: return None
 
     df_h, features = build_v11_features(df_global, viirs, horizon)
@@ -202,28 +235,19 @@ def train_v11_horizon_model(df_global, viirs, country_code, horizon):
     X_train = X_train.replace([np.inf, -np.inf], 0)
     X_test  = X_test.replace([np.inf, -np.inf], 0)
 
-    params = {
-        "n_estimators": 300,
-        "max_depth": 7,
-        "learning_rate": 0.033,
-        "subsample": 0.812,
-        "colsample_bytree": 0.502,
-        "min_child_weight": 2,
-        "tree_method": "hist",
-        "random_state": 42
-    }
+    # Optuna optimization
+    print(f"     Starting Optuna optimization (20 trials)...")
+    study = optuna.create_study(direction="minimize")
+    study.optimize(lambda trial: objective(trial, X_train, y_train_delta, X_test, y_test, y_naive, train[lag_col], test[lag_col]), n_trials=20)
     
-    param_path = os.path.join(MODEL_DIR, "best_params_per_country.json")
-    if os.path.exists(param_path):
-        with open(param_path, "r") as f:
-            best_all = json.load(f)
-        if country_code in best_all:
-            best_cc = best_all[country_code]
-            for k in ["max_depth", "learning_rate", "n_estimators", "subsample", "colsample_bytree"]:
-                if k in best_cc:
-                    params[k] = best_cc[k]
-
-    model = xgb.XGBRegressor(**params)
+    best_params = study.best_params
+    best_params["tree_method"] = "hist"
+    best_params["random_state"] = 42
+    
+    print(f"     Best MASE: {study.best_value:.4f}")
+    
+    # Train final model with best params
+    model = xgb.XGBRegressor(**best_params)
     model.fit(X_train, y_train_delta, eval_set=[(X_test, y_test_delta)], verbose=False)
     
     y_pred_delta_train = model.predict(X_train)
@@ -253,10 +277,11 @@ def train_v11_horizon_model(df_global, viirs, country_code, horizon):
     meta = {
         "country": country_code,
         "model": "XGBRegressor",
-        "version": "v11_xgboost_aod",
+        "version": "v11_xgboost_aod_optuna",
         "horizon_days": horizon,
         "features": features,
         "feature_medians": medians,
+        "best_params": best_params,
         "metrics": {
             "test_r2": round(test_r2, 4),
             "test_mae": round(test_mae, 2),
@@ -284,13 +309,13 @@ def main():
         
         all_meta[cc] = {}
         for h in HORIZONS:
-            meta = train_v11_horizon_model(df_global, viirs, cc, h)
+            meta = train_and_optimize(df_global, viirs, cc, h)
             if meta:
                 all_meta[cc][f"h{h}"] = meta
 
     conn.close()
     
-    print("\n### V11 Global Engine - Final Evaluation")
+    print("\n### V11 Optuna Global Engine - Final Evaluation")
     print("| Country | Horizon | MAE | NMAE | MASE | Accuracy (%) |")
     print("| :--- | :--- | :--- | :--- | :--- | :--- |")
     for cc in COUNTRIES:
