@@ -51,10 +51,14 @@ from src.config import DB_CONFIG
 
 
 def _load_openaq_keys():
+    import re
     keys_str = os.environ.get("OPENAQ_KEYS")
     if keys_str:
+        # Normalize: replace ALL newlines/carriage-returns with commas,
+        # so keys pasted on separate lines in GitHub Secrets still work.
+        keys_str = re.sub(r'[\r\n]+', ',', keys_str)
         return [k.strip() for k in keys_str.split(",") if k.strip()]
-    key = os.environ.get("OPENAQ_API_KEY")
+    key = os.environ.get("OPENAQ_API_KEY", "").strip()
     if not key:
         raise ValueError("Set OPENAQ_KEYS or OPENAQ_API_KEY environment variable!")
     return [key]

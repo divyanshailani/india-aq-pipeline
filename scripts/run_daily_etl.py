@@ -110,8 +110,13 @@ def main():
         from scripts.fetch_daily_weather import fetch_weather_for_date
         from scripts.fetch_daily_aod import fetch_aod_for_date
         
+        import re
+        raw_keys = os.getenv("OPENAQ_KEYS", "")
+        raw_keys = re.sub(r'[\r\n]+', ',', raw_keys)  # normalize newlines to commas
+        clean_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+        
         fallback_manager = ApiFallbackManager(
-            openaq_keys=os.getenv("OPENAQ_KEYS", "").split(","),
+            openaq_keys=clean_keys,
             max_retries=3,
             base_backoff=2.0
         )

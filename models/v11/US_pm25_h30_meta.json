@@ -1,7 +1,7 @@
 {
   "country": "US",
   "model": "XGBRegressor",
-  "version": "v11_xgboost_aod_full",
+  "version": "v11_xgboost_aod_optuna",
   "horizon_days": 30,
   "features": [
     "pm25_lag_30",
@@ -13,6 +13,8 @@
     "future_temp",
     "future_wind",
     "future_precip",
+    "rolling_3day_precip",
+    "aod_volatility_index",
     "pm25_momentum",
     "future_temp_momentum",
     "future_wind_momentum",
@@ -25,33 +27,44 @@
     "wind_v"
   ],
   "feature_medians": {
-    "pm25_lag_30": 6.4,
-    "pm25_ema_3d": 6.726829259191485,
+    "pm25_lag_30": 6.5,
+    "pm25_ema_3d": 6.808490376563027,
     "month_sin": 1.2246467991473532e-16,
     "month_cos": -1.8369701987210297e-16,
-    "day_of_year_sin": 0.08590610426133272,
-    "day_of_year_cos": -0.06768276175455162,
-    "future_temp": 15.8,
-    "future_wind": 16.7,
+    "day_of_year_sin": 0.06875540848113941,
+    "day_of_year_cos": -0.08054900421874167,
+    "future_temp": 15.9,
+    "future_wind": 16.9,
     "future_precip": 0.0,
+    "rolling_3day_precip": 1.9000000000000001,
+    "aod_volatility_index": 0.0,
     "pm25_momentum": 0.10000000000000009,
     "future_temp_momentum": 0.1999999999999993,
     "future_wind_momentum": 0.0,
-    "fire_density_100km": 1.0,
-    "fire_radiative_power_total": 303.52,
-    "fire_wind_interaction": 4563.380999999999,
+    "fire_density_100km": 0.0,
+    "fire_radiative_power_total": 0.0,
+    "fire_wind_interaction": 0.0,
     "aod_mean_lag_1": 0.12916666666666668,
     "aod_max_lag_1": 0.21,
     "wind_u": 1.0,
     "wind_v": 0.0
   },
+  "best_params": {
+    "n_estimators": 500,
+    "max_depth": 10,
+    "learning_rate": 0.05852470562218824,
+    "subsample": 0.6647786336190624,
+    "colsample_bytree": 0.7268120632607531,
+    "min_child_weight": 5,
+    "tree_method": "hist",
+    "random_state": 42
+  },
   "metrics": {
-    "test_r2": 0.1636,
+    "test_r2": 0.1702,
     "test_mae": 3.02,
-    "test_rmse": 5.23,
-    "nmae": 0.413,
+    "test_rmse": 5.21,
+    "nmae": 0.4125,
     "mase": 0.71,
-    "accuracy_percentage": 58.7,
-    "note": "Trained on 100% full dataset for maximum recency. Metrics carried forward from holdout evaluation."
+    "accuracy_percentage": 58.75
   }
 }

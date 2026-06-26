@@ -72,6 +72,14 @@ jobs:
           except Exception as e:
               print(f'❌ DB connection failed: {e}')
               raise
+          # Verify OPENAQ keys are clean
+          import re
+          raw = os.environ.get('OPENAQ_KEYS', '')
+          normalized = re.sub(r'[\r\n]+', ',', raw)
+          keys = [k.strip() for k in normalized.split(',') if k.strip()]
+          print(f'🔑 OPENAQ_KEYS: {len(keys)} keys found (raw length: {len(raw)})')
+          for i, k in enumerate(keys):
+              print(f'  Key {i+1}: length={len(k)}, has_newline={chr(10) in k}, has_cr={chr(13) in k}')
           "
 
       - name: 🌐 Step 1 - Fetch Latest OpenAQ & NASA POWER Data

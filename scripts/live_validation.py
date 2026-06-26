@@ -27,11 +27,12 @@ def run_live_validation(conn=None):
         
         # Step A: Query today's actual PM2.5 values
         actuals_query = f"""
-            SELECT country_code AS country, date AS target_date, value AS actual_pm25
-            FROM daily_features
-            WHERE date = '{today}'
-              AND parameter = 'pm25'
-              AND value IS NOT NULL
+            SELECT s.country_code AS country, d.date AS target_date, d.value AS actual_pm25
+            FROM daily_features d
+            JOIN stations s ON d.station_id = s.id
+            WHERE d.date = '{today}'
+              AND d.parameter = 'pm25'
+              AND d.value IS NOT NULL
         """
         df_actuals = pd.read_sql(actuals_query, conn)
         
