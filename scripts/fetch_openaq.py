@@ -50,11 +50,20 @@ _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
 from src.config import DB_CONFIG
 
 
-def get_headers():
+def _load_openaq_keys():
+    keys_str = os.environ.get("OPENAQ_KEYS")
+    if keys_str:
+        return [k.strip() for k in keys_str.split(",") if k.strip()]
     key = os.environ.get("OPENAQ_API_KEY")
     if not key:
-        raise ValueError("Set OPENAQ_API_KEY environment variable!")
-    return {"X-API-Key": key}
+        raise ValueError("Set OPENAQ_KEYS or OPENAQ_API_KEY environment variable!")
+    return [key]
+
+OPENAQ_KEYS_LIST = _load_openaq_keys()
+
+def get_random_header():
+    import random
+    return {"X-API-Key": random.choice(OPENAQ_KEYS_LIST)}
 
 
 def get_db_connection():
@@ -67,7 +76,7 @@ def get_checkpoint_file(country_code):
 
 
 # Step 1: Discover stations
-def fetch_country_stations(country_code, headers):
+def fetch_country_stations(country_code):
     """Fetch all monitoring stations for a country."""
     country_info = COUNTRIES[country_code]
     stations = []
@@ -77,7 +86,7 @@ def fetch_country_stations(country_code, headers):
         print(f"  Fetching stations page {page}...")
         r = requests.get(
             f"{API_BASE}/locations",
-            headers=headers,
+            headers=get_random_header(),
             params={
                 "countries_id": country_info["openaq_id"],
                 "limit": 1000,
@@ -86,8 +95,8 @@ def fetch_country_stations(country_code, headers):
         )
 
         if r.status_code == 429:
-            print(f"  API rate limit hit. Sleeping for 10s...")
-            time.sleep(10)
+            print(f"  API rate limit hit. Rotating key and sleeping 2s...")
+            time.sleep(2)
             continue
         elif r.status_code != 200:
             print(f"  API error {r.status_code}: {r.text[:200]}")
@@ -129,19 +138,20 @@ def upsert_stations(conn, stations):
     if not stations:
         return
 
-    # Deduplicate in python based on (name, country_code) to prevent CardinalityViolation
+    # Deduplicate in python based on openaq_id to prevent CardinalityViolation
     unique_stations = {}
     for s in stations:
-        key = (s["name"], s["country_code"])
-        if key not in unique_stations:
-            unique_stations[key] = s
+        unique_stations[s["openaq_id"]] = s
     stations = list(unique_stations.values())
 
     sql = """
         INSERT INTO stations (openaq_id, name, city, state, country_code, latitude, longitude)
         VALUES %s
-        ON CONFLICT (name, country_code) DO UPDATE SET
-            openaq_id = EXCLUDED.openaq_id,
+        ON CONFLICT (openaq_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            city = EXCLUDED.city,
+            state = EXCLUDED.state,
+            country_code = EXCLUDED.country_code,
             latitude = EXCLUDED.latitude,
             longitude = EXCLUDED.longitude,
             updated_at = now()
@@ -169,11 +179,11 @@ def get_station_id_map(conn, country_code):
 
 
 # Step 2: Fetch measurements (ASYNC BATCHED)
-async def fetch_station_sensors_async(session, station_openaq_id, headers, semaphore):
+async def fetch_station_sensors_async(session, station_openaq_id, semaphore):
     url = f"{API_BASE}/locations/{station_openaq_id}/sensors"
     for attempt in range(5):
         async with semaphore:
-            async with session.get(url, headers=headers) as r:
+            async with session.get(url, headers=get_random_header()) as r:
                 if r.status == 429:
                     await asyncio.sleep(5)
                     continue
@@ -183,7 +193,7 @@ async def fetch_station_sensors_async(session, station_openaq_id, headers, semap
                 return data.get("results", [])
     return []
 
-async def fetch_sensor_measurements_async(session, sensor_id, headers, date_from, date_to, semaphore):
+async def fetch_sensor_measurements_async(session, sensor_id, date_from, date_to, semaphore):
     all_measurements = []
     page = 1
     while True:
@@ -197,7 +207,7 @@ async def fetch_sensor_measurements_async(session, sensor_id, headers, date_from
         data = None
         for attempt in range(5):
             async with semaphore:
-                async with session.get(url, headers=headers, params=params) as r:
+                async with session.get(url, headers=get_random_header(), params=params) as r:
                     if r.status == 429:
                         await asyncio.sleep(5)
                         continue
@@ -231,13 +241,13 @@ async def fetch_sensor_measurements_async(session, sensor_id, headers, date_from
         
     return all_measurements
 
-async def process_station_async(session, station, headers, dt_from, dt_to, semaphore, internal_id_map):
+async def process_station_async(session, station, dt_from, dt_to, semaphore, internal_id_map):
     openaq_id = station["openaq_id"]
     internal_id = internal_id_map.get(openaq_id)
     if not internal_id:
         return []
 
-    sensors = await fetch_station_sensors_async(session, openaq_id, headers, semaphore)
+    sensors = await fetch_station_sensors_async(session, openaq_id, semaphore)
     if not sensors:
         return []
 
@@ -245,7 +255,7 @@ async def process_station_async(session, station, headers, dt_from, dt_to, semap
     for sensor in sensors:
         sensor_id = sensor["id"]
         tasks.append(
-            fetch_sensor_measurements_async(session, sensor_id, headers, dt_from, dt_to, semaphore)
+            fetch_sensor_measurements_async(session, sensor_id, dt_from, dt_to, semaphore)
         )
         
     sensor_results = await asyncio.gather(*tasks)
@@ -350,12 +360,12 @@ def run_fetch(country_code, days=None, date_from=None, date_to=None, resume=Fals
     print(f"  Date range: {dt_from[:10]} to {dt_to[:10]}")
     print(f"{'='*60}")
 
-    headers = get_headers()
+
     conn = get_db_connection()
 
     # Step 1: Discover stations (Synchronous, fast)
     print(f"\n  Discovering {country_name} stations...")
-    stations = fetch_country_stations(country_code, headers)
+    stations = fetch_country_stations(country_code)
     print(f"  Found {len(stations)} stations")
 
     upsert_stations(conn, stations)
@@ -400,7 +410,7 @@ def run_fetch(country_code, days=None, date_from=None, date_to=None, resume=Fals
                 
                 tasks = []
                 for station in chunk:
-                    tasks.append(process_station_async(session, station, headers, dt_from, dt_to, semaphore, id_map))
+                    tasks.append(process_station_async(session, station, dt_from, dt_to, semaphore, id_map))
                     
                 chunk_results = await asyncio.gather(*tasks)
                 
