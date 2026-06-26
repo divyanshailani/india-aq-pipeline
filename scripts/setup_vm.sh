@@ -43,7 +43,7 @@ User=root
 WorkingDirectory=/opt/pow-eda-pipeline
 Environment="PATH=/opt/pow-eda-pipeline/venv/bin"
 EnvironmentFile=/opt/pow-eda-pipeline/.env
-ExecStart=/opt/pow-eda-pipeline/venv/bin/uvicorn scripts.admin_dashboard:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=/opt/pow-eda-pipeline/venv/bin/uvicorn scripts.admin_dashboard:app --host 127.0.0.1 --port 8000 --workers 1
 
 [Install]
 WantedBy=multi-user.target
