@@ -22,11 +22,11 @@ if not db_password:
 
 # ─── Database ─────────────────────────────────────────────
 DB_CONFIG = {
-    "dbname": os.environ.get("POSTGRES_DB", "indiaaq"),
-    "user": os.environ.get("POSTGRES_USER", "postgres"),
-    "password": db_password,
-    "host": os.environ.get("POSTGRES_HOST", "localhost"),
-    "port": int(os.environ.get("POSTGRES_PORT", 5432)),
+    "dbname": os.environ.get("POSTGRES_DB", "indiaaq").strip(),
+    "user": os.environ.get("POSTGRES_USER", "postgres").strip(),
+    "password": db_password.strip(),
+    "host": os.environ.get("POSTGRES_HOST", "localhost").strip(),
+    "port": int(os.environ.get("POSTGRES_PORT", "5432").strip()),
 }
 
 # ─── Paths ────────────────────────────────────────────────
