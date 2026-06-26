@@ -157,18 +157,23 @@ async def get_status():
 
         # ── Model metadata from JSON ──
         models = {}
+        v11_model_dir = os.path.join(BASE_DIR, "models", "v11")
         v6_model_dir = os.path.join(BASE_DIR, "models", "v6")
+        # Try v11 first, fall back to v6
         meta_file = os.path.join(v6_model_dir, "all_models_meta.json")
         if os.path.exists(meta_file):
             with open(meta_file) as f:
                 models = json.load(f)
 
-        # ── Last retrain date ──
+        # ── Last retrain date (check v11 XGBoost .json models) ──
         last_retrain = None
+        model_search_dir = v11_model_dir if os.path.isdir(v11_model_dir) else v6_model_dir
         for cc in ["IN", "US", "GB", "AU"]:
-            pkl = os.path.join(v6_model_dir, f"{cc}_pm25_h1_gbr.pkl")
-            if os.path.exists(pkl):
-                mtime = datetime.fromtimestamp(os.path.getmtime(pkl))
+            model_file = os.path.join(model_search_dir, f"{cc}_pm25_h1_xgb.json")
+            if not os.path.exists(model_file):
+                model_file = os.path.join(v6_model_dir, f"{cc}_pm25_h1_gbr.pkl")
+            if os.path.exists(model_file):
+                mtime = datetime.fromtimestamp(os.path.getmtime(model_file))
                 if last_retrain is None or mtime > last_retrain:
                     last_retrain = mtime
 
@@ -327,20 +332,23 @@ def _run_predict():
         if return_code == 0:
             add_log("✅ PREDICTIONS COMPLETE")
 
-            # Copy to frontend repo
-            add_log("Copying JSON to frontend repo...")
-            data_dir = os.path.join(SITE_REPO, "public", "data")
-            os.makedirs(data_dir, exist_ok=True)
-            copied = 0
-            for f in os.listdir(SITE_DATA):
-                if f.endswith(".json"):
-                    shutil.copy2(os.path.join(SITE_DATA, f),
-                                 os.path.join(data_dir, f))
-                    copied += 1
-            add_log(f"  Copied {copied} JSON files → {data_dir}")
+            # Copy to frontend repo (only if it exists)
+            if os.path.exists(SITE_REPO):
+                add_log("Copying JSON to frontend repo...")
+                data_dir = os.path.join(SITE_REPO, "public", "data")
+                os.makedirs(data_dir, exist_ok=True)
+                copied = 0
+                for f in os.listdir(SITE_DATA):
+                    if f.endswith(".json"):
+                        shutil.copy2(os.path.join(SITE_DATA, f),
+                                     os.path.join(data_dir, f))
+                        copied += 1
+                add_log(f"  Copied {copied} JSON files → {data_dir}")
+            else:
+                add_log("  ℹ️ Frontend repo not found on this machine — skipping JSON copy")
             pipeline_state["result"] = "success"
         else:
-            add_log(f"❌ Pipeline error: {result.stderr[:500]}")
+            add_log(f"❌ Pipeline error: Script exited with code {return_code}")
             pipeline_state["result"] = "error"
     except Exception as e:
         add_log(f"❌ PREDICT FAILED: {e}")
