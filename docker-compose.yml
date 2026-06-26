@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # The FastAPI Dashboard and Pipeline orchestrator
+  api:
+    build: .
+    container_name: globalaqi-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Mount the models directory so retrained models are saved directly to your host machine
+      - ./models:/app/models
+      # Mount checkpoints so pipeline resumes work even if container restarts
+      - ./scripts/.checkpoints:/app/scripts/.checkpoints
+      # (Optional) Mount your local DB data if you want a dockerized Postgres
+      # - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    # If the database is running on the host machine, use host.docker.internal in your .env
+    # DB_HOST=host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Optional: If you want to move the database to Docker in the future, uncomment this:
+  # db:
+  #   image: postgres:15
+  #   container_name: globalaqi-db
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-8765}
+  #     POSTGRES_DB: indiaaq
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+# volumes:
+#   pgdata:
