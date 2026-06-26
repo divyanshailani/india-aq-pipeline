@@ -17,7 +17,7 @@ apt install -y python3-venv python3-pip postgresql-client nginx git
 APP_DIR="/opt/pow-eda-pipeline"
 if [ ! -d "$APP_DIR" ]; then
     echo "📂 Cloning repository..."
-    git clone https://github.com/divyanshailani/pow-eda-pipeline.git $APP_DIR
+    git clone https://github.com/divyanshailani/global-aq-intelligence-pipeline.git $APP_DIR
 else
     echo "📂 Repository already exists. Pulling latest..."
     cd $APP_DIR && git pull
