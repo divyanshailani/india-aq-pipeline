@@ -125,7 +125,7 @@ def main():
             # We explicitly target the rows that were just generated or are missing context
             if station_ids is None:
                 cur.execute("""
-                    SELECT df.station_id, df.date, s.latitude, s.longitude
+                    SELECT DISTINCT df.station_id, df.date, s.latitude, s.longitude
                     FROM daily_features df
                     JOIN stations s ON df.station_id = s.id
                     WHERE df.om_temperature IS NULL
@@ -136,7 +136,7 @@ def main():
             else:
                 format_strings = ','.join(['%s'] * len(station_ids))
                 cur.execute(f"""
-                    SELECT df.station_id, df.date, s.latitude, s.longitude
+                    SELECT DISTINCT df.station_id, df.date, s.latitude, s.longitude
                     FROM daily_features df
                     JOIN stations s ON df.station_id = s.id
                     WHERE df.station_id IN ({format_strings})
