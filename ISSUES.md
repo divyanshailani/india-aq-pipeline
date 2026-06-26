@@ -230,3 +230,31 @@ When a decision tree reaches a leaf node for a condition like "Rain > 15mm," it 
 
 **Status:** Documented as a future ML frontier. The current V11.1 model is statistically sound (all MASE < 1.0 globally) and relies entirely on autonomous machine learning without hardcoded physics heuristics.
 
+---
+
+## 19. The Nginx 404 & Azure Port 443 Block (Production Deployment)
+**Issue:**
+After generating an SSL certificate via Certbot (`certbot --nginx`), the raw IP address returned a `404 Not Found` (served directly by Nginx, not FastAPI). Simultaneously, accessing the secure `https://api.globalaqi.live` domain resulted in a complete browser timeout (`ERR_CONNECTION_TIMED_OUT`).
+
+**Root Cause 1 (The 404):**
+Certbot modifies the Nginx configuration to strict host-matching (`server_name api.globalaqi.live`). When accessed via the raw IP instead of the domain name, Nginx fails to match the server block. Since there is no default fallback block, Nginx defaults to searching for an `index.html` in an empty `/var/www/html` directory, throwing a native 404.
+
+**Root Cause 2 (The Timeout):**
+Certbot successfully established the SSL certificates via port 80 (HTTP-01 challenge) and updated Nginx to listen on port 443. However, the Azure Virtual Machine's Network Security Group (NSG) had port 443 explicitly blocked. Nginx was correctly attempting to upgrade HTTP traffic to HTTPS, but the Azure firewall was completely dropping the incoming port 443 packets.
+
+**Solution:**
+1. Accessed the Azure Portal → VM Networking → Added an Inbound Port Rule for `Port 443 (HTTPS)`.
+2. Traffic instantly flowed through to the Nginx reverse proxy, resolving the timeout and properly routing to the Gunicorn/FastAPI backend on port 8000.
+
+---
+
+## 20. The "0-Day Gap" Dashboard Illusion (Data Sync vs Backfill)
+**Issue:**
+The admin dashboard reported a `0d gap` (Zero-day data gap) for all countries (US, GB, AU), even though a massive 10-day API rate-limit failure had just occurred, halting the backfill process for these countries.
+
+**Root Cause:**
+The dashboard calculates the "Data Gap" purely by querying the absolute maximum date in the database: `SELECT MAX(datetime_utc)::date FROM raw_measurements`.
+Because the daily incremental collector runs *before* the historical backfill process, it had successfully fetched "today's" data for all countries. Therefore, `MAX(date)` correctly evaluated to "today" (a 0-day gap). The dashboard logic assumes contiguous data and does not detect historical "holes" in the middle of the timeline caused by aborted backfill chunks.
+
+**Solution:**
+Understood that the `0d gap` metric represents the "freshest available data point", not structural completeness. Missing historical chunks are natively tracked by the separate `backfill_state.json` ledger, which the GitHub Actions runner autonomously reads and resumes processing without relying on the dashboard's `MAX(date)` gap logic.

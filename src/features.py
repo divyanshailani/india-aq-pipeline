@@ -366,3 +366,59 @@ def run_feature_pipeline(conn, station_ids=None, target_params=None):
         "stations_with_features": stations_with_data,
         "total_features": total_features,
     }
+
+
+# ─── Advanced Weather Features ─────────────────────────────
+def ensure_advanced_weather_columns(conn):
+    """Ensure the advanced engineered weather/AOD columns exist."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            ALTER TABLE daily_features
+                ADD COLUMN IF NOT EXISTS rolling_3day_precip DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS aod_volatility_index DOUBLE PRECISION
+        """)
+    conn.commit()
+
+
+def build_advanced_weather_features(conn):
+    """
+    Computes advanced weather features like 3-day rolling precipitation
+    and AOD volatility across all rows using efficient Postgres window functions.
+    This prevents data leakage by explicitly skipping the current day.
+    """
+    ensure_advanced_weather_columns(conn)
+    
+    # We update all rows that don't have rolling_3day_precip computed yet.
+    # To compute rolling features safely without data leakage:
+    # rolling_3day_precip: SUM of past 3 days (excluding today).
+    # aod_volatility: STDDEV of past 7 days (excluding today).
+    
+    sql = """
+        WITH rolling_data AS (
+            SELECT station_id, date, parameter,
+                   SUM(om_precipitation) OVER (
+                       PARTITION BY station_id, parameter 
+                       ORDER BY date 
+                       ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING
+                   ) as roll_3_precip,
+                   STDDEV(om_aerosol_optical_depth) OVER (
+                       PARTITION BY station_id, parameter 
+                       ORDER BY date 
+                       ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
+                   ) as aod_vol
+            FROM daily_features
+        )
+        UPDATE daily_features df
+        SET rolling_3day_precip = COALESCE(rd.roll_3_precip, 0),
+            aod_volatility_index = COALESCE(rd.aod_vol, 0)
+        FROM rolling_data rd
+        WHERE df.station_id = rd.station_id 
+          AND df.date = rd.date 
+          AND df.parameter = rd.parameter
+          AND (df.rolling_3day_precip IS NULL OR df.aod_volatility_index IS NULL)
+    """
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        updated = cur.rowcount
+    conn.commit()
+    return updated

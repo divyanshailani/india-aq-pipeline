@@ -76,16 +76,50 @@ def save_backfill_state(state):
         json.dump(state, f, indent=2)
 
 
-# Incremental fetch
+from src.config import DB_CONFIG
+import psycopg2
+
+def get_gap_days(cc):
+    """Query the DB for the most recent data point for this country to calculate exact days to fetch."""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT MAX(date) 
+                FROM daily_features
+                WHERE country_code = %s
+            """, (cc,))
+            row = cur.fetchone()
+        conn.close()
+        
+        if row and row[0]:
+            last_dt = row[0]
+            if isinstance(last_dt, datetime):
+                last_dt = last_dt.replace(tzinfo=None).date()
+            elif hasattr(last_dt, 'date'):
+                last_dt = last_dt.date()
+            
+            gap = (datetime.utcnow().date() - last_dt).days
+            return max(1, gap + 1) # fetch at least 1 day, plus 1 for safe overlap
+    except Exception as e:
+        print(f"  Warning: could not compute gap for {cc} ({e}), defaulting to 7")
+    return 7
+
+
 def run_incremental(countries, days=7):
     """Fetch recent data for all countries."""
-    print(f"\n  PHASE 1: Incremental (last {days} days)")
+    print(f"\n  PHASE 1: Incremental")
     print(f"  {'-'*50}")
 
     results = {}
     for cc in countries:
         try:
-            stats = run_fetch(cc, days=days)
+            # Dynamically calculate exact gap to avoid over-fetching and wasting time.
+            # Use 'days' argument only if explicitly overridden from the default 7.
+            fetch_days = get_gap_days(cc) if days == 7 else days
+            
+            print(f"\n  [INCREMENTAL] {cc} gap calculated. Fetching last {fetch_days} days...")
+            stats = run_fetch(cc, days=fetch_days)
             results[cc] = {"status": "success", "rows": stats["rows_inserted"]}
         except Exception as e:
             print(f"  {cc} FAILED: {e}")

@@ -655,6 +655,28 @@ def predict_direct_ensemble(country_code, station_df, station_forecast, viirs_da
                 elif col == "wind_v":
                     wd = last_row.get("wind_direction")
                     row[col] = np.sin(wd * np.pi / 180) if pd.notnull(wd) else medians.get(col, 0)
+                elif col == "rolling_3day_precip":
+                    # Sum precipitation over the 3 days preceding target_date
+                    past_precip = []
+                    for d_idx in range(1, 4):
+                        d = target_date - timedelta(days=d_idx)
+                        d_str = d.strftime('%Y-%m-%d')
+                        if d > pd.to_datetime(last_row["date"]):
+                            # It's in the forecast future
+                            past_precip.append(station_forecast.get(d_str, {}).get("precip", 0))
+                        else:
+                            # It's in the historical dataframe
+                            hist = station_df[station_df["date"] == pd.to_datetime(d)]
+                            past_precip.append(hist["om_precipitation"].iloc[0] if not hist.empty else 0)
+                    row[col] = sum(past_precip)
+                elif col == "aod_volatility_index":
+                    # STD of AOD over the 7 days preceding target_date
+                    past_aod = []
+                    for d_idx in range(1, 8):
+                        d = target_date - timedelta(days=d_idx)
+                        hist = station_df[station_df["date"] == pd.to_datetime(d)]
+                        past_aod.append(hist["om_aerosol_optical_depth"].iloc[0] if not hist.empty else 0)
+                    row[col] = float(np.std(past_aod)) if past_aod else 0.0
                 elif col == "aod_mean_lag_1":
                     row[col] = aod_data.get("aod_mean_lag_1", medians.get(col, 0))
                 elif col == "aod_max_lag_1":
@@ -675,7 +697,14 @@ def predict_direct_ensemble(country_code, station_df, station_forecast, viirs_da
         if not use_v9:
             pred = pred + last_row.get("value", 0)
             
-        direct[h] = max(0.0, pred)
+        # ── PHASE 2: THE PHYSICS OVERRIDE (is_raining_now logic gate) ──
+        # If the 16-day Open-Meteo forecast predicts heavy rain, we explicitly force 
+        # the XGBoost engine down the "Wet Scavenging" thermodynamic path.
+        
+        # Removed heuristic physics override - model now natively understands rolling_3day_precip
+        
+        pred = max(0.0, pred)
+        direct[h] = pred
 
     if not direct:
         return None
@@ -721,12 +750,7 @@ def predict_direct_ensemble(country_code, station_df, station_forecast, viirs_da
 
         # Apply thermodynamic modifiers to intermediate days to create realistic variance
         if day not in anchors:
-            if precip > 2.0:
-                pred *= 0.70  # Rain Washout (30% reduction)
-            elif wind > 15.0:
-                pred *= 0.85  # Wind Dispersion (15% reduction)
-            elif wind < 5.0 and precip == 0:
-                pred *= 1.20  # Stagnation Spike (20% increase)
+            # Removed heuristic physics override as models are now natively trained to handle washout
             
             pred = max(0.0, pred)
 

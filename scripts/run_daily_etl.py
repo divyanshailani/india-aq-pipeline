@@ -38,6 +38,18 @@ def get_recent_station_ids(conn, days=3):
     return ids
 
 
+def ensure_weather_columns(conn):
+    """Ensure weather and AOD columns exist before fetching."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            ALTER TABLE daily_features
+                ADD COLUMN IF NOT EXISTS om_temperature DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS om_wind_speed DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS om_precipitation DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS om_aerosol_optical_depth DOUBLE PRECISION
+        """)
+    conn.commit()
+
 def main():
     parser = argparse.ArgumentParser(description="Global AQ Daily ETL Pipeline")
     parser.add_argument("--station-id", type=int, default=None,
@@ -53,6 +65,7 @@ def main():
     args = parser.parse_args()
 
     conn = psycopg2.connect(**DB_CONFIG)
+    ensure_weather_columns(conn)
 
     # Determine which stations to process
     if args.station_id:
@@ -85,6 +98,105 @@ def main():
         print("🛠️  Phase 2: Feature Engineering")
         print("=" * 50)
         feature_report = run_feature_pipeline(conn, station_ids)
+        print()
+
+    # ── Step 3: Atomic Weather & AOD Enrichment ──
+    if not args.clean_only:
+        print("=" * 50)
+        print("🌍 Phase 3: Atomic Weather & AOD Enrichment")
+        print("=" * 50)
+        
+        from src.api_fallback_manager import ApiFallbackManager
+        from scripts.fetch_daily_weather import fetch_weather_for_date
+        from scripts.fetch_daily_aod import fetch_aod_for_date
+        
+        fallback_manager = ApiFallbackManager(
+            openaq_keys=os.getenv("OPENAQ_KEYS", "").split(","),
+            max_retries=3,
+            base_backoff=2.0
+        )
+        
+        with conn.cursor() as cur:
+            # We explicitly target the rows that were just generated or are missing context
+            if station_ids is None:
+                cur.execute("""
+                    SELECT df.station_id, df.date, s.latitude, s.longitude
+                    FROM daily_features df
+                    JOIN stations s ON df.station_id = s.id
+                    WHERE df.om_temperature IS NULL
+                       OR df.om_precipitation IS NULL
+                       OR df.om_aerosol_optical_depth IS NULL
+                    ORDER BY df.date DESC, df.station_id
+                """)
+            else:
+                format_strings = ','.join(['%s'] * len(station_ids))
+                cur.execute(f"""
+                    SELECT df.station_id, df.date, s.latitude, s.longitude
+                    FROM daily_features df
+                    JOIN stations s ON df.station_id = s.id
+                    WHERE df.station_id IN ({format_strings})
+                      AND (df.om_temperature IS NULL
+                           OR df.om_precipitation IS NULL
+                           OR df.om_aerosol_optical_depth IS NULL)
+                    ORDER BY df.date DESC, df.station_id
+                """, tuple(station_ids))
+            
+            missing_rows = cur.fetchall()
+            
+        if not missing_rows:
+            print("  ✓ All daily_features have complete weather & AOD context.")
+        else:
+            print(f"  Fetching Weather & AOD for {len(missing_rows)} rows...")
+            for sid, dt, lat, lon in missing_rows:
+                target_date_str = dt.strftime("%Y-%m-%d")
+                print(f"  -> Station {sid} on {target_date_str}")
+                
+                try:
+                    w_data = fetch_weather_for_date(fallback_manager, lat, lon, target_date_str)
+                    aod_data = fetch_aod_for_date(fallback_manager, lat, lon, target_date_str)
+                    
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE daily_features
+                            SET om_temperature = %s,
+                                om_wind_speed = %s,
+                                om_precipitation = %s,
+                                humidity = COALESCE(humidity, %s),
+                                temperature = COALESCE(temperature, %s),
+                                wind_speed = COALESCE(wind_speed, %s),
+                                om_aerosol_optical_depth = %s
+                            WHERE station_id = %s AND date = %s
+                        """, (
+                            w_data["om_temperature"], w_data["om_wind_speed"], w_data["om_precipitation"],
+                            w_data["humidity"], w_data["om_temperature"], w_data["om_wind_speed"],
+                            aod_data["om_aerosol_optical_depth"],
+                            sid, dt
+                        ))
+                    conn.commit()
+                    time.sleep(0.1) # Be gentle to APIs
+                    
+                except RuntimeError as e:
+                    print(f"  🚨 ATOMIC ABORT: {e}")
+                    print(f"  Rolling back daily_features row for station {sid} on {target_date_str} to maintain 100% density.")
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM daily_features WHERE station_id = %s AND date = %s", (sid, dt))
+                    conn.commit()
+                except Exception as e:
+                    print(f"  ⚠️ Unexpected Error: {e}")
+                    print(f"  Rolling back daily_features row for station {sid} on {target_date_str} to maintain 100% density.")
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM daily_features WHERE station_id = %s AND date = %s", (sid, dt))
+                    conn.commit()
+        print()
+
+    # ── Step 4: Advanced Weather Engineering ──
+    if not args.clean_only:
+        print("=" * 50)
+        print("⚡ Phase 4: Advanced Weather Engineering")
+        print("=" * 50)
+        from src.features import build_advanced_weather_features
+        updated_rows = build_advanced_weather_features(conn)
+        print(f"  ✅ Computed rolling_3day_precip & aod_volatility_index for {updated_rows:,} rows.")
         print()
 
     # ── Summary ──

@@ -24,3 +24,8 @@ aiohttp>=3.9
 # Utilities (optional, used in notebooks)
 matplotlib>=3.7
 seaborn>=0.12
+
+# Added for GitHub Actions & Scripts
+python-dotenv>=1.0
+xgboost>=2.0
+certifi>=2023.7.22
