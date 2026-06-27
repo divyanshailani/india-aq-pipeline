@@ -38,8 +38,8 @@ This fetches live sensor data, generates 30-day forecasts per station, exports s
 
 ```
 OpenAQ API ──┐
-NASA POWER ──┼──▶ PostgreSQL ──▶ Feature Engineering ──▶ V7 Models ──▶ JSON Export ──▶ Next.js
-Open-Meteo ──┘                   (lag/rolling/delta)     (GBR × 16)    (site_data/)    (auto-sync)
+NASA POWER ──┼──▶ PostgreSQL ──▶ Feature Engineering ──▶ V11 Router ──▶ JSON Export ──▶ Next.js
+Open-Meteo ──┘                   (lag/rolling/delta)     (XGBoost)     (site_data/)    (auto-sync)
 ```
 
 ### Model Architecture: V11 3D Atmospheric Ensemble Router
