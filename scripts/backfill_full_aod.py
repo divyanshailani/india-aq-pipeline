@@ -88,7 +88,7 @@ def update_aod_bulk(conn, station_id, df):
     from psycopg2.extras import execute_batch
     cur = conn.cursor()
     execute_batch(cur, sql, values, page_size=500)
-    updated = cur.rowcount
+    updated = len(values)
     conn.commit()
     cur.close()
     return updated
