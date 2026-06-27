@@ -47,6 +47,10 @@ def fetch_openmeteo_aod(lat, lon):
             "timezone": "auto"
         }
         resp = requests.get(OPEN_METEO_AQ_URL, params=params, timeout=30)
+        
+        # Sleep to avoid hitting 100 req/min Open-Meteo limit (5 workers * 6 years = massive burst)
+        time.sleep(2.0)
+        
         if resp.status_code != 200:
             if resp.status_code == 429:
                 raise Exception("Rate Limited (429)")
@@ -130,7 +134,8 @@ def process_station(row, total, index):
         except Exception as e:
             conn.rollback()
             if "429" in str(e):
-                time.sleep(15) # Wait 15 seconds on rate limit
+                print(f"⚠️ Rate limit hit on station {sid}. Waiting 30s...")
+                time.sleep(30) # Wait 30 seconds on rate limit
             else:
                 print(f"Error on station {sid}: {e}")
                 break
@@ -155,9 +160,9 @@ def main():
     updated_rows = 0
     start_time = time.time()
     
-    # Use 5 threads to parallelize the slow hourly downloads without getting aggressively rate-limited
-    MAX_WORKERS = 5
-    print(f"⚡ Using {MAX_WORKERS} parallel workers...")
+    # Use 1 thread to avoid aggressive rate limiting
+    MAX_WORKERS = 1
+    print(f"⚡ Using {MAX_WORKERS} parallel workers to respect API limits...")
     
     completed = 0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
