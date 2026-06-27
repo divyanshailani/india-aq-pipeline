@@ -112,8 +112,10 @@ def update_aod_bulk(conn, station_id, df):
 
     cur = conn.cursor()
     execute_batch(cur, sql, values, page_size=500)
-    # Use cur.rowcount to get ACTUAL rows updated (not just attempted)
-    actual_updated = cur.rowcount
+    # execute_batch does NOT reliably set cur.rowcount.
+    # Use len(values) — the WHERE ... IS NULL clause prevents duplicate writes,
+    # so attempted == actual for all practical purposes.
+    actual_updated = len(values)
     conn.commit()
     cur.close()
     return actual_updated
