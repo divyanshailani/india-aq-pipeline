@@ -241,7 +241,6 @@ def insert_features(conn, features_df):
              roll_3_mean, roll_7_mean, roll_3_std,
              roll_14_mean, roll_30_mean, roll_14_std,
              pm25_delta_1, pm25_delta_7,
-             temperature, humidity, wind_speed,
              no2_value, co_value, o3_value, so2_value)
         VALUES %s
         ON CONFLICT (date, station_id, parameter) DO UPDATE SET
@@ -261,9 +260,6 @@ def insert_features(conn, features_df):
             roll_14_std  = EXCLUDED.roll_14_std,
             pm25_delta_1 = EXCLUDED.pm25_delta_1,
             pm25_delta_7 = EXCLUDED.pm25_delta_7,
-            temperature  = COALESCE(EXCLUDED.temperature, daily_features.temperature),
-            humidity     = COALESCE(EXCLUDED.humidity, daily_features.humidity),
-            wind_speed   = COALESCE(EXCLUDED.wind_speed, daily_features.wind_speed),
             no2_value    = EXCLUDED.no2_value,
             co_value     = EXCLUDED.co_value,
             o3_value     = EXCLUDED.o3_value,
@@ -282,7 +278,6 @@ def insert_features(conn, features_df):
             row.get("roll_3_mean"), row.get("roll_7_mean"), row.get("roll_3_std"),
             row.get("roll_14_mean"), row.get("roll_30_mean"), row.get("roll_14_std"),
             row.get("pm25_delta_1"), row.get("pm25_delta_7"),
-            row.get("temperature"), row.get("humidity"), row.get("wind_speed"),
             row.get("no2_value"), row.get("co_value"),
             row.get("o3_value"), row.get("so2_value"),
         ))
