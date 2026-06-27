@@ -207,6 +207,20 @@ Output JSONs are written to `data/site_data/` and automatically synced to `../gl
 
 ---
 
+## 🚧 Ongoing Issues & Data Health
+
+The following issues were identified during a full Azure DB audit (2026-06-27) and are actively being tracked on GitHub:
+
+| # | Issue | Status | Impact |
+|---|-------|--------|--------|
+| [#5](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/5) | Environment State Divergence — Local vs Azure DB | ✅ Resolved | Data sync fixed |
+| [#1](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/1) | 13 Legacy Columns at 95% NULL | 🔍 Investigation | Potential dead weight |
+| [#2](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/2) | 1,464 Phantom Stations (35%) with zero features | 🔍 Investigation | ETL coverage gap |
+| [#4](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/4) | Empty `model_registry` & `predictions` tables | 🔍 Investigation | Schema cleanup |
+| [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | 🔧 In Progress | Backfill script running |
+
+> For the full database audit report, see [`CHANGELOG.md`](CHANGELOG.md) entry `[11.1.2]`.
+
 For the full engineering history — data leakage discoveries, NASA POWER migration, thermodynamic interpolation design — see [`ISSUES.md`](./ISSUES.md).
 
 ---
