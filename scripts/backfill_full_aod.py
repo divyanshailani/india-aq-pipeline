@@ -24,43 +24,60 @@ def get_stations_with_missing_aod(conn):
     """
     return pd.read_sql(query, conn, params=(START_DATE, END_DATE))
 
-def fetch_openmeteo_aod(lat, lon):
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "start_date": START_DATE,
-        "end_date": END_DATE,
-        "hourly": ["aerosol_optical_depth"],
-        "timezone": "auto"
-    }
-    resp = requests.get(OPEN_METEO_AQ_URL, params=params, timeout=120)
-    if resp.status_code != 200:
-        if resp.status_code == 429:
-            raise Exception("Rate Limited (429)")
-        print(f"  [!] OpenMeteo AQ error {resp.status_code}: {resp.text}")
-        return None
-        
-    data = resp.json().get("hourly", {})
-    aod_array = data.get("aerosol_optical_depth", [])
-    time_array = data.get("time", [])
-    
-    if not aod_array or not time_array:
-        return None
-        
-    # We get hourly data, but we need daily averages
-    df_hourly = pd.DataFrame({
-        "time": pd.to_datetime(time_array),
-        "aod": aod_array
-    })
-    
-    # Compute daily mean (ignoring NaNs)
-    df_hourly['date'] = df_hourly['time'].dt.date
-    df_daily = df_hourly.groupby('date')['aod'].mean().reset_index()
-    
-    # Rename columns to match db
-    df_daily.rename(columns={"aod": "om_aerosol_optical_depth"}, inplace=True)
-    return df_daily
 
+def fetch_openmeteo_aod(lat, lon):
+    all_dfs = []
+    # Chunk by year to prevent Open-Meteo API timeouts on massive 5-year requests
+    years = [2021, 2022, 2023, 2024, 2025, 2026]
+    
+    for year in years:
+        start = f"{year}-01-01"
+        if year == 2026:
+            end = END_DATE
+            if start > end: continue
+        else:
+            end = f"{year}-12-31"
+            
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start,
+            "end_date": end,
+            "hourly": ["aerosol_optical_depth"],
+            "timezone": "auto"
+        }
+        resp = requests.get(OPEN_METEO_AQ_URL, params=params, timeout=30)
+        if resp.status_code != 200:
+            if resp.status_code == 429:
+                raise Exception("Rate Limited (429)")
+            # Ignore other errors like 400 for future dates
+            continue
+            
+        data = resp.json().get("hourly", {})
+        aod_array = data.get("aerosol_optical_depth", [])
+        time_array = data.get("time", [])
+        
+        if not aod_array or not time_array:
+            continue
+            
+        df_hourly = pd.DataFrame({
+            "time": pd.to_datetime(time_array),
+            "aod": aod_array
+        })
+        
+        df_hourly['date'] = df_hourly['time'].dt.date
+        df_daily = df_hourly.groupby('date')['aod'].mean().reset_index()
+        df_daily.rename(columns={"aod": "om_aerosol_optical_depth"}, inplace=True)
+        all_dfs.append(df_daily)
+        
+        # Micro-sleep between chunks for safety
+        time.sleep(0.2)
+        
+    if not all_dfs:
+        return None
+        
+    final_df = pd.concat(all_dfs, ignore_index=True)
+    return final_df
 def update_aod_bulk(conn, station_id, df):
     if df is None or df.empty:
         return 0
