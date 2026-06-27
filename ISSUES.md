@@ -258,3 +258,65 @@ Because the daily incremental collector runs *before* the historical backfill pr
 
 **Solution:**
 Understood that the `0d gap` metric represents the "freshest available data point", not structural completeness. Missing historical chunks are natively tracked by the separate `backfill_state.json` ledger, which the GitHub Actions runner autonomously reads and resumes processing without relying on the dashboard's `MAX(date)` gap logic.
+
+---
+
+## 21. The "Environment State Divergence" — Local DB vs Azure Cloud DB [RESOLVED 2026-06-27]
+**Issue:**
+During the AOD backfill operation, a merge script (`/tmp/merge_aod.py`) was run on the local Mac Mini to copy AOD data from `satellite_aod_features` into `daily_features`. However, the `.env` file had no `POSTGRES_HOST` configured — so it defaulted to `localhost`. The script successfully updated **1,069,944 rows** in the local PostgreSQL database while the Azure Flexible PostgreSQL production database remained completely untouched with 100% NULL AOD values.
+
+Subsequently, running `backfill_full_aod.py` on the Azure VM triggered Open-Meteo rate limits (HTTP 429) because the API had already been heavily queried, causing the Azure VM's IP (`4.213.226.19`) to get flagged by the WAF.
+
+**Solution:**
+1. Created `scripts/azure_merge_aod.py` with the correct Azure project path (`/opt/pow-eda-pipeline`) and ran it directly on the Azure VM to sync 1,069,944 rows from `satellite_aod_features` → `daily_features`.
+2. For remaining Open-Meteo gaps: configured the local Mac Mini's `.env` with Azure DB credentials (`POSTGRES_HOST=globalaqiserver.postgres.database.azure.com`) and ran `backfill_full_aod.py` from the Mac. This bypassed the IP block since the Mac's home IP was clean.
+3. Hardened `backfill_full_aod.py` with DB reconnection logic, exponential backoff (30s→150s), network timeout handling, and proper `len(values)` row counting (since `execute_batch` does not reliably set `cur.rowcount`).
+
+**Lesson:** Always verify `POSTGRES_HOST` before running data migration scripts. Local and cloud databases can silently diverge, creating a "Split Reality" where development looks healthy but production is broken.
+
+---
+
+## 22. The Legacy Column Graveyard — 13 Columns at 95% NULL [OPEN — Investigation Required]
+**Issue:**
+A full Azure DB audit (2026-06-27) revealed **13 columns** in `daily_features` with **94.5–97.2% NULL rates** (~1.55M NULLs out of 1.63M rows). These columns include `temperature`, `humidity`, `wind_speed`, `no2_value`, `co_value`, `o3_value`, `so2_value`, `nasa_temperature`, `nasa_humidity`, `nasa_wind_speed`, `precipitation`, `wind_direction`, and `fire_count`.
+
+The ~80K non-NULL rows in each column are consistent with data only being populated for a subset of stations (likely India-only, ~740 stations × ~110 days ≈ 80K rows). The pipeline has since migrated to `om_temperature`, `om_wind_speed`, `om_precipitation` from Open-Meteo, which have a **99.5% fill rate**.
+
+**Action Required:**
+1. Confirm that V11 model does NOT use these legacy columns in its feature list.
+2. If confirmed unused: mark as `DEPRECATED` in schema documentation and consider dropping in a future migration (~200MB savings).
+3. If any are still used by V11: create a backfill strategy using NASA POWER or Open-Meteo historical APIs.
+
+**Impact:** If V11 uses only `om_*` columns → **No impact, safe to deprecate.** If V11 uses legacy columns → **Model is effectively blind on 95% of its training data.**
+
+---
+
+## 23. The Phantom Stations — 1,464 Stations With Zero Feature Data [OPEN — Investigation Required]
+**Issue:**
+Cross-table consistency check (2026-06-27) revealed **1,464 out of 4,193 stations (35%)** exist in the `stations` table but have **zero corresponding rows** in `daily_features`. The `daily_features` table only covers 2,729 unique stations.
+
+**Possible Root Causes:**
+1. Stations were added to the `stations` table during OpenAQ ingestion but the ETL never processed their measurements.
+2. Inactive or decommissioned stations with no measurement data available from OpenAQ.
+3. The ETL pipeline applies a minimum-data-threshold filter that silently excludes these stations.
+4. Country-specific feature tables (`features_india`, `features_usa`, etc.) were planned as alternative destinations but never populated.
+
+**Action Required:**
+1. Query which countries the 1,464 orphan stations belong to.
+2. Check if they have data in `raw_measurements` or `clean_measurements`.
+3. If they have raw data → the feature engineering ETL is silently skipping them (potential bug).
+4. If they have no raw data → mark as `inactive` in the stations table.
+
+---
+
+## 24. Empty Operational Tables — model_registry & predictions [OPEN — Schema Cleanup]
+**Issue:**
+Azure DB audit (2026-06-27) found two operational tables with **zero rows**: `model_registry` (13 cols) and `predictions` (12 cols). Additionally, 4 country-specific feature tables (`features_india`, `features_usa`, `features_uk`, `features_australia`) are completely empty at 0 bytes.
+
+**Questions:**
+1. **model_registry:** How is V11 being tracked? Are model versions, hyperparameters, and metrics stored elsewhere (filesystem `.pkl` files, code constants)?
+2. **predictions:** Is prediction output only going to `prediction_log` (191K rows) and `prediction_log_archive` (1.8K rows)? What was the original purpose of the `predictions` table?
+
+**Action Required:**
+Either populate these tables with their intended data or drop them to reduce schema clutter. The empty country-specific tables suggest a planned-but-unfinished multi-region feature store architecture.
+
