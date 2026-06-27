@@ -126,11 +126,6 @@ def build_v11_features(df, viirs, horizon):
     df_v11["pm25_momentum"] = df_v11[lag_col] - df_v11[lag_col_next]
     df_v11["future_temp_momentum"] = df_v11.groupby("station_id")["future_temp"].diff(1)
     df_v11["future_wind_momentum"] = df_v11.groupby("station_id")["future_wind"].diff(1)
-    
-    if "wind_direction" in df_v11.columns:
-        wd = df_v11["wind_direction"].fillna(0)
-        df_v11["wind_u"] = np.cos(wd * np.pi / 180)
-        df_v11["wind_v"] = np.sin(wd * np.pi / 180)
         
     df_v11 = df_v11.dropna(subset=[
         lag_col, lag_col_next, "pm25_ema_3d",
@@ -154,8 +149,6 @@ def build_v11_features(df, viirs, horizon):
         "fire_wind_interaction",
         "aod_mean_lag_1", "aod_max_lag_1"
     ]
-    if "wind_direction" in df_v11.columns:
-        features.extend(["wind_u", "wind_v"])
         
     return df_v11, features
 
