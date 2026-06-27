@@ -218,7 +218,9 @@ The following issues were identified during a full Azure DB audit (2026-06-27) a
 | [#1](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/1) | 13 Legacy Columns at 95% NULL | ✅ Resolved | 11 columns dropped via CASCADE |
 | [#2](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/2) | 1,464 Phantom Stations (35%) with zero features | 🔍 Investigation | ETL coverage gap |
 | [#4](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/4) | Empty `model_registry` & `predictions` tables | 🔍 Investigation | Schema cleanup |
-| [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | 🔧 In Progress | 4-node parallel backfill running |
+| [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | ✅ Resolved | 4-node backfill completed successfully |
+| [#6](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/6) | Multi-VM Parallel AOD Backfill (4-node mesh) | ✅ Resolved | 1.6M rows processed in < 3 hours |
+| [#8](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/8) | 14-Day Manual ETL Catchup After AOD Backfill | 🔧 In Progress | Running in tmux on main VM |
 
 ### 🖥️ Multi-VM Backfill Architecture
 
