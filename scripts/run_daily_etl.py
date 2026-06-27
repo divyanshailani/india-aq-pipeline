@@ -164,14 +164,10 @@ def main():
                             SET om_temperature = %s,
                                 om_wind_speed = %s,
                                 om_precipitation = %s,
-                                humidity = COALESCE(humidity, %s),
-                                temperature = COALESCE(temperature, %s),
-                                wind_speed = COALESCE(wind_speed, %s),
                                 om_aerosol_optical_depth = %s
                             WHERE station_id = %s AND date = %s
                         """, (
                             w_data["om_temperature"], w_data["om_wind_speed"], w_data["om_precipitation"],
-                            w_data["humidity"], w_data["om_temperature"], w_data["om_wind_speed"],
                             aod_data["om_aerosol_optical_depth"],
                             sid, dt
                         ))
