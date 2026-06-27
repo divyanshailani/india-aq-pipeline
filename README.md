@@ -117,7 +117,8 @@ The V11.1 engine represents a fundamental shift from "Single-Day Myopia" to **Au
 │   ├── fetch_nasa_power.py        # Historical satellite weather
 │   ├── fetch_firms_fire.py        # NASA FIRMS fire count data
 │   ├── cleanup_prediction_log.py  # Archive impossible past-date rows
-│   └── build_global_features.py  # Bulk feature backfill
+│   ├── build_global_features.py  # Bulk feature backfill
+│   └── backfill_aod_partitioned.py # Multi-VM parallel AOD backfill
 ├── src/
 │   ├── config.py                  # DB config + paths
 │   ├── features.py                # Feature engineering (lag/rolling/delta)
@@ -214,12 +215,42 @@ The following issues were identified during a full Azure DB audit (2026-06-27) a
 | # | Issue | Status | Impact |
 |---|-------|--------|--------|
 | [#5](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/5) | Environment State Divergence — Local vs Azure DB | ✅ Resolved | Data sync fixed |
-| [#1](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/1) | 13 Legacy Columns at 95% NULL | 🔍 Investigation | Potential dead weight |
+| [#1](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/1) | 13 Legacy Columns at 95% NULL | ✅ Resolved | 11 columns dropped via CASCADE |
 | [#2](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/2) | 1,464 Phantom Stations (35%) with zero features | 🔍 Investigation | ETL coverage gap |
 | [#4](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/4) | Empty `model_registry` & `predictions` tables | 🔍 Investigation | Schema cleanup |
-| [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | 🔧 In Progress | Backfill script running |
+| [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | 🔧 In Progress | 4-node parallel backfill running |
 
-> For the full database audit report, see [`CHANGELOG.md`](CHANGELOG.md) entry `[11.1.2]`.
+### 🖥️ Multi-VM Backfill Architecture
+
+Currently running a 4-node parallel AOD backfill to fill ~540K NULL satellite records:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Open-Meteo Air Quality API               │
+│              (10K requests/day per IP limit)                 │
+└──────┬──────────┬──────────┬──────────┬──────────────────────┘
+       │          │          │          │
+  IP₁  │    IP₂   │    IP₃   │    IP₄   │
+       ▼          ▼          ▼          ▼
+┌──────────┐┌──────────┐┌──────────┐┌──────────┐
+│  DO VM 1 ││Azure B1s ││  DO VM 2 ││ Mac Mini │
+│ Part 0/4 ││ Part 1/4 ││ Part 2/4 ││ Part 3/4 │
+│ ~453 stn ││ ~453 stn ││ ~453 stn ││ ~453 stn │
+└────┬─────┘└────┬─────┘└────┬─────┘└────┬─────┘
+     │           │           │           │
+     └───────────┴───────────┴───────────┘
+                      │
+                      ▼
+     ┌──────────────────────────────┐
+     │   Azure PostgreSQL Flex      │
+     │   (50 max connections)       │
+     │   UPDATE ... WHERE IS NULL   │
+     └──────────────────────────────┘
+```
+
+Each VM runs `backfill_aod_partitioned.py --partition N --total 4` in a tmux session.
+
+> For the full database audit report, see [`CHANGELOG.md`](CHANGELOG.md) entry `[11.1.3]`.
 
 For the full engineering history — data leakage discoveries, NASA POWER migration, thermodynamic interpolation design — see [`ISSUES.md`](./ISSUES.md).
 

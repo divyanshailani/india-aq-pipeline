@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [11.1.3] - Multi-VM Parallel Backfill & DB Cleanup (2026-06-27)
+
+### 🚀 Multi-VM Parallel AOD Backfill
+- **Built `backfill_aod_partitioned.py`**: Self-contained, zero-dependency backfill script for distributed execution across multiple VMs.
+- **4-Node Mesh Network**: Deployed backfill across 3 cloud VMs (2 DigitalOcean Droplets + 1 Azure B1s) + local Mac, each with unique IP to bypass Open-Meteo's 10K/day rate limit.
+- **Station Partitioning**: Uses `station_index % total_partitions == partition_id` modulo arithmetic for zero-overlap distribution.
+- **Dedup-Safe Writes**: All UPDATEs gated by `WHERE om_aerosol_optical_depth IS NULL` — no risk of overwriting existing data.
+- **Reduced ETA**: 11 hours (single-node) → ~2 hours (4-node parallel). 4× throughput improvement.
+- **Robust Error Handling**: 5-attempt retry with categorized backoff (429→exponential, timeout→linear, DB disconnect→reconnect).
+- **Unbuffered Output**: `python3 -u` flag ensures real-time log streaming through `tee` in tmux sessions.
+
+### 🗑️ Legacy Column Cleanup
+- **Dropped 11 dead columns** from `daily_features` on both Azure and local DBs:
+  `temperature`, `humidity`, `wind_speed`, `no2_value`, `co_value`, `o3_value`, `so2_value`, `nasa_temperature`, `nasa_humidity`, `nasa_wind_speed`, `precipitation`
+- These columns were at 94.5–97.2% NULL and fully superseded by `om_*` equivalents (99.5% fill rate).
+- Used `ALTER TABLE ... DROP COLUMN ... CASCADE` to cleanly remove all dependencies.
+
+### ⏸️ CI/CD Pipeline Paused
+- **GH Actions `daily_pipeline.yml` cron disabled** to prevent API rate-limit collision during backfill.
+- Will be re-enabled after AOD backfill + 14-day ETL catchup completes.
+
+### 📋 Infrastructure Tracked
+- GitHub Issues created for: Multi-VM Backfill, Legacy Column Drop, 14-Day ETL Catchup.
+
 ## [11.1.2] - Azure DB Audit & AOD Backfill Hardening (2026-06-27)
 
 ### 🔍 Full Azure DB Audit
