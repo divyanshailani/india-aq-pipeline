@@ -130,7 +130,6 @@ def main():
                     JOIN stations s ON df.station_id = s.id
                     WHERE df.om_temperature IS NULL
                        OR df.om_precipitation IS NULL
-                       OR df.om_aerosol_optical_depth IS NULL
                     ORDER BY df.date DESC, df.station_id
                 """)
             else:
@@ -141,8 +140,7 @@ def main():
                     JOIN stations s ON df.station_id = s.id
                     WHERE df.station_id IN ({format_strings})
                       AND (df.om_temperature IS NULL
-                           OR df.om_precipitation IS NULL
-                           OR df.om_aerosol_optical_depth IS NULL)
+                           OR df.om_precipitation IS NULL)
                     ORDER BY df.date DESC, df.station_id
                 """, tuple(station_ids))
             
