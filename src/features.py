@@ -240,8 +240,7 @@ def insert_features(conn, features_df):
              lag_14, lag_21, lag_30,
              roll_3_mean, roll_7_mean, roll_3_std,
              roll_14_mean, roll_30_mean, roll_14_std,
-             pm25_delta_1, pm25_delta_7,
-             no2_value, co_value, o3_value, so2_value)
+             pm25_delta_1, pm25_delta_7)
         VALUES %s
         ON CONFLICT (date, station_id, parameter) DO UPDATE SET
             value        = EXCLUDED.value,
@@ -259,11 +258,7 @@ def insert_features(conn, features_df):
             roll_30_mean = EXCLUDED.roll_30_mean,
             roll_14_std  = EXCLUDED.roll_14_std,
             pm25_delta_1 = EXCLUDED.pm25_delta_1,
-            pm25_delta_7 = EXCLUDED.pm25_delta_7,
-            no2_value    = EXCLUDED.no2_value,
-            co_value     = EXCLUDED.co_value,
-            o3_value     = EXCLUDED.o3_value,
-            so2_value    = EXCLUDED.so2_value
+            pm25_delta_7 = EXCLUDED.pm25_delta_7
     """
 
     values = []
@@ -277,9 +272,7 @@ def insert_features(conn, features_df):
             row.get("lag_14"), row.get("lag_21"), row.get("lag_30"),
             row.get("roll_3_mean"), row.get("roll_7_mean"), row.get("roll_3_std"),
             row.get("roll_14_mean"), row.get("roll_30_mean"), row.get("roll_14_std"),
-            row.get("pm25_delta_1"), row.get("pm25_delta_7"),
-            row.get("no2_value"), row.get("co_value"),
-            row.get("o3_value"), row.get("so2_value"),
+            row.get("pm25_delta_1"), row.get("pm25_delta_7")
         ))
 
     with conn.cursor() as cur:
