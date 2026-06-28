@@ -100,7 +100,7 @@ jobs:
           git clone https://${FRONTEND_PAT}@github.com/divyanshailani/global-aq-intelligence-web.git global-aq-intelligence-web
           
           # Go back to pipeline dir to run predictions
-          cd pow-eda-pipeline
+          cd global-aq-intelligence-pipeline
 
           echo "Exporting Parquet from Azure DB..."
           python scripts/export_azure_to_parquet.py
