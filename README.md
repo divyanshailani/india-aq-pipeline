@@ -1,7 +1,3 @@
-> ⚠️ **PROPRIETARY & CONFIDENTIAL**
-> This repository contains the architectural implementation of the Global AQ Intelligence pipeline.
-> The core V7 thermodynamic weights (`.pkl`), proprietary datasets, and historical telemetry databases are excluded to protect intellectual property.
-
 # Global AQ Intelligence — ML Pipeline
 
 [![Live Deployment](https://img.shields.io/badge/Live_Deployment-global--aq--intelligence.vercel.app-10B981?style=for-the-badge&logo=vercel)](https://global-aq-intelligence.vercel.app)
@@ -142,7 +138,6 @@ We migrated to the V12 Challenger Pure Engine, marking the first honestly-evalua
 │   ├── predict_pipeline.py        # Main: fetch → predict → export → sync
 │   ├── train_v5.py                # Legacy chained GBR (baseline)
 │   ├── train_v6.py                # Direct multi-horizon (no future weather)
-│   ├── train_v7_experiment.py     # V7: direct + future weather injection
 │   ├── fetch_openaq.py            # Live sensor data
 │   ├── fetch_nasa_power.py        # Historical satellite weather
 │   ├── fetch_firms_fire.py        # NASA FIRMS fire count data
@@ -213,9 +208,6 @@ python3 scripts/predict_pipeline.py
 
 # 5. Skip fetch (use existing DB data)
 python3 scripts/predict_pipeline.py --skip-fetch
-
-# 6. Retrain V7 models
-python3 scripts/train_v7_experiment.py
 ```
 
 Output JSONs are written to `data/site_data/` and automatically synced to `../global-aq-intelligence/public/data/` if the frontend repo is present on the same machine.
@@ -308,4 +300,4 @@ For the full engineering history — data leakage discoveries, NASA POWER migrat
 
 ### License & Copyright
 © 2026 Divyansh Ailani. 
-This project is licensed under the MIT License. You are free to clone, run, and modify this pipeline for evaluation or personal use. Note that production database credentials and live cloud environments are excluded and kept private.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details. Note that production database credentials and live cloud environments are excluded and kept private.

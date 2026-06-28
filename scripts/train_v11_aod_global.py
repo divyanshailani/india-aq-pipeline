@@ -11,6 +11,10 @@ import psycopg2
 import optuna
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+# DEPRECATED: This script trains the legacy V11 models. 
+# V12 models (Challenger Pure Engine) are now the production standard.
+# See src/v12_tuning.py for the current model architecture.
+
 warnings.filterwarnings("ignore")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 

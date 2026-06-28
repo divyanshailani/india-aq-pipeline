@@ -29,3 +29,9 @@ seaborn>=0.12
 python-dotenv>=1.0
 xgboost>=2.0
 certifi>=2023.7.22
+
+# V12 Deployment: ONNX Transmutation & Inference
+onnx>=1.15
+onnxmltools>=1.12
+onnxconverter-common>=1.14
+onnxruntime>=1.16
