@@ -102,9 +102,6 @@ jobs:
           # Go back to pipeline dir to run predictions
           cd global-aq-intelligence-pipeline
 
-          echo "Exporting Parquet from Azure DB..."
-          python scripts/export_azure_to_parquet.py
-          
           echo "Running XGBoost V12 ONNX Models..."
           python scripts/predict_v12_onnx.py
           

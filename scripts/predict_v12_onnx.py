@@ -1,7 +1,7 @@
 """
 V12 ONNX Inference Engine for Azure VM
 ======================================
-Reads `data/daily_features_full.parquet` directly.
+Connects directly to Azure PostgreSQL to fetch the latest features.
 Runs ONNX inference for 16 models (4 countries × 4 horizons).
 Interpolates intermediate days (1-30).
 Outputs Next.js compatible static JSON directly.
@@ -15,6 +15,11 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import onnxruntime as ort
+import psycopg2
+
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.config import DB_CONFIG
 
 # V12 Constants
 V12_FEATURES = [
@@ -48,28 +53,66 @@ def load_models(model_dir):
                 print(f"Warning: Model not found at {model_path}")
     return sessions
 
-def get_latest_station_features(df, country):
-    """Gets the most recent row for each station in a country."""
-    df_c = df[df['country_code'] == country]
-    if df_c.empty:
-        return pd.DataFrame()
+def load_latest_features_from_db():
+    """Fetches ONLY the latest row per station from PostgreSQL."""
+    query = """
+        SELECT DISTINCT ON (df.station_id)
+            df.date,
+            df.station_id,
+            df.month,
+            df.day_of_week,
+            df.is_weekend,
+            df.day_of_year,
+            df.lag_1, df.lag_2, df.lag_3, df.lag_7,
+            df.lag_14, df.lag_21, df.lag_30,
+            df.roll_3_mean, df.roll_7_mean, df.roll_3_std,
+            df.roll_14_mean, df.roll_30_mean, df.roll_14_std,
+            df.om_temperature,
+            df.om_wind_speed,
+            df.om_precipitation,
+            df.om_aerosol_optical_depth,
+            df.rolling_3day_precip,
+            df.aod_volatility_index,
+            df.country_code,
+            s.latitude,
+            s.longitude
+        FROM daily_features df
+        JOIN stations s ON df.station_id = s.id
+        ORDER BY df.station_id, df.date DESC
+    """
     
-    # Sort by date descending and drop duplicates by station_id
-    latest_df = df_c.sort_values('date', ascending=False).drop_duplicates(subset=['station_id'])
-    return latest_df
+    print("🔌 Connecting to Azure PostgreSQL...")
+    conn = psycopg2.connect(**DB_CONFIG)
+    print("📥 Pulling latest station features directly...")
+    t0 = time.time()
+    df = pd.read_sql(query, conn)
+    pull_secs = time.time() - t0
+    conn.close()
+    
+    print(f"   ✅ Fetched {len(df):,} latest rows in {pull_secs:.1f}s")
+    
+    # Downcast and adjust types
+    for col in ["month", "day_of_week", "day_of_year"]:
+        if col in df.columns:
+            df[col] = df[col].astype("Int16")
+    df["is_weekend"] = df["is_weekend"].astype("boolean")
+    df["station_id"] = df["station_id"].astype("int32")
+    
+    return df
+
+def get_latest_station_features(df, country):
+    """Filters the fetched dataframe by country."""
+    df_c = df[df['country_code'] == country]
+    return df_c
 
 def run_inference():
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    data_path = os.path.join(base_dir, 'data', 'daily_features_full.parquet')
     model_dir = os.path.join(base_dir, 'models', 'v12')
     output_dir = os.path.join(base_dir, 'site_data')
     
     os.makedirs(output_dir, exist_ok=True)
     
-    print(f"Loading data from {data_path}...")
-    df = pd.read_parquet(data_path)
-    if 'parameter' in df.columns:
-        df = df[df['parameter'] == 'pm25']
+    df = load_latest_features_from_db()
         
     print(f"Loading 16 ONNX models...")
     sessions = load_models(model_dir)
@@ -86,8 +129,7 @@ def run_inference():
         last_data_date_str = str(latest_df['date'].max())
         last_data_date = pd.to_datetime(last_data_date_str).date()
         
-        # Ensure all V12 features exist and fill NaNs with 0 (XGBoost hist handles NaNs natively, 
-        # but for ONNX we need to feed numbers. Wait, ONNX handles NaNs as float('nan'))
+        # Ensure all V12 features exist
         X = latest_df[V12_FEATURES].astype(np.float32).copy()
         
         station_ids = latest_df['station_id'].tolist()
