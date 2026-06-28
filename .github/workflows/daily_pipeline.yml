@@ -1,10 +1,8 @@
 name: Global AQI Daily Pipeline
 
 on:
-  # schedule:
-    # ⚠️ PAUSED (2026-06-27): AOD backfill consuming ~10K API calls/day.
-    # Re-enable after backfill completes. See ISSUES.md #3.
-    # - cron: '0 0 * * *'
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch: # Manual trigger still works for emergencies
 
 jobs:
@@ -93,25 +91,30 @@ jobs:
           echo "Starting Cleaning, Feature Engineering, and Weather Backfill..."
           python scripts/run_daily_etl.py
 
-      - name: 🧠 Step 2 - Run 30-Day Predictions & Deploy
+      - name: 🧠 Step 2 - Run 30-Day V12 ONNX Predictions & Deploy
         env:
           FRONTEND_PAT: ${{ secrets.FRONTEND_PAT }}
         run: |
           echo "Cloning frontend repo to allow prediction sync..."
           cd ..
-          git clone https://${FRONTEND_PAT}@github.com/divyanshailani/global-aq-intelligence.git global-aq-intelligence
+          git clone https://${FRONTEND_PAT}@github.com/divyanshailani/global-aq-intelligence-web.git global-aq-intelligence-web
           
           # Go back to pipeline dir to run predictions
-          cd global-aq-intelligence-pipeline
+          cd pow-eda-pipeline
 
-          echo "Running XGBoost v11 Models..."
-          python scripts/predict_pipeline.py
+          echo "Exporting Parquet from Azure DB..."
+          python scripts/export_azure_to_parquet.py
           
-          # The pipeline script automatically copied data to ../global-aq-intelligence/public/data
+          echo "Running XGBoost V12 ONNX Models..."
+          python scripts/predict_v12_onnx.py
+          
           echo "Pushing new predictions to the UI..."
-          cd ../global-aq-intelligence
+          # The script saves to site_data/ natively. Copy it manually just to be safe.
+          cp site_data/*.json ../global-aq-intelligence-web/public/data/
+          
+          cd ../global-aq-intelligence-web
           git config user.name "Global AQI Bot"
           git config user.email "bot@globalaqi.com"
           git add public/data/
-          git commit -m "auto: Daily AI Predictions Update 🚀" || echo "No changes to commit"
+          git commit -m "auto: Daily V12 ONNX Predictions Update 🚀" || echo "No changes to commit"
           git push
