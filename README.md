@@ -221,6 +221,14 @@ The following issues were identified during a full Azure DB audit (2026-06-27) a
 | [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | ✅ Resolved | 4-node backfill completed successfully |
 | [#6](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/6) | Multi-VM Parallel AOD Backfill (4-node mesh) | ✅ Resolved | 1.6M rows processed in < 3 hours |
 | [#8](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/8) | 14-Day Manual ETL Catchup After AOD Backfill | 🔧 In Progress | Running in tmux on main VM |
+| [Issue 25](./ISSUES.md#25-legacy-schema-collision-v11-blindness-resolved) | Legacy Schema Collision (V11 Blindness) | ✅ Resolved | V11 evaluation deprecated |
+| [Issue 26](./ISSUES.md#26-the-target-cascade-leakage-bug-in-v12-training-resolved) | Target Cascade Leakage Bug in V12 Training | ✅ Resolved | Deep isolated dataframe per horizon |
+| [Issue 27](./ISSUES.md#27-phase-shift-target-alignment-evaluation-bug-resolved) | Phase-Shift Evaluation Target Bug | ✅ Resolved | Target phase alignment corrected |
+
+### ⚡ Global Grid Engine Specifications
+All V12 (Challenger) models undergo extensive hyperparameter sweeps (150 Optuna trials × 5-Fold Time-Series CV) across 1.4 million rows.
+**Hardware Profile:** The distributed training grid utilizes serverless compute nodes exclusively powered by **32-core Intel Xeon CPUs** accompanied by **16 GB RAM** per node. 
+**Compute Time:** A full hyperparameter tuning and CV cycle requires approximately **2.5 hours per model/horizon**, consuming roughly ~30 compute hours for the full 4x4 global grid.
 
 ### 🖥️ Multi-VM Backfill Architecture
 
