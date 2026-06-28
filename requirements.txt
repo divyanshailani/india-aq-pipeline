@@ -35,3 +35,4 @@ onnx>=1.15
 onnxmltools>=1.12
 onnxconverter-common>=1.14
 onnxruntime>=1.16
+pyarrow>=14.0
