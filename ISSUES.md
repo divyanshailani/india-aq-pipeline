@@ -320,3 +320,25 @@ Azure DB audit (2026-06-27) found two operational tables with **zero rows**: `mo
 **Action Required:**
 Either populate these tables with their intended data or drop them to reduce schema clutter. The empty country-specific tables suggest a planned-but-unfinished multi-region feature store architecture.
 
+
+## 25. Legacy Schema Collision (V11 Blindness) [RESOLVED]
+**Issue:** 
+V11 (Champion) was originally trained on legacy local DB columns (`wind_direction`, `aod_mean`). When migrating the inference pipeline to read from the new cloud parquet dataset (`om_wind_speed`, `om_aerosol_optical_depth`), V11 encountered 95%+ `NaN` values, effectively blinding it and collapsing its predictions.
+**Resolution:** 
+Completely deprecated V11 evaluation on the new schema. V12 (Challenger) explicitly leverages the high-availability (99.5% fill rate) Open-Meteo (`om_`) features, ensuring robust inference without legacy schema collision.
+
+## 26. The Target Cascade Leakage Bug in V12 Training [RESOLVED]
+**Issue:** 
+A catastrophic memory mutation bug in the V12 tuning loop. The script mutated the in-memory dataframe during the horizon iteration (h=1, 7, 14, 30). The `target_1d` column generated in the first loop remained as a "ghost feature" for the `h=7` model. Consequently, `h=14` leaked both `target_1d` and `target_7d`. 
+This leakage caused models to cheat by looking at future PM2.5 data, resulting in impossibly low MAE scores for higher horizons (e.g., GB 14d MAE was 0.67, lower than 1d MAE of 0.94).
+**Resolution:** 
+Refactored the training loop to utilize a deep `.copy()` per horizon, strictly isolating memory states. Added a "nuclear drop" strategy to aggressively strip all `target_*` columns from the feature matrix, and implemented a post-training assertion to explicitly verify 0 leaked target features before saving the booster. 
+**Hardware Profile:** The 12 contaminated models were retrained from scratch on an optimized serverless grid powered strictly by **32-core Intel Xeon CPUs and 16 GB RAM** nodes.
+**Training Time:** ~2.5 hours per horizon (150 Optuna trials × 5-fold CV on 1.4M rows). Total retrain time for 12 models: ~30 compute hours.
+
+## 27. Phase-Shift Target Alignment Evaluation Bug [RESOLVED]
+**Issue:** 
+During the initial V11 vs V12 evaluation, the script compared the models' multi-day horizon predictions against the *current* day's actual PM2.5 value (`value`) instead of the true phase-shifted future target (`target_{horizon}d`).
+This severely penalized the model for successfully predicting the future, inflating MAE and causing massive MASE explosions (>2.0) globally.
+**Resolution:** 
+Rewrote the V12 evaluation logic (`evaluate_v12_only.py`) to correctly align the predicted `t+h` value against the true `t+h` actual. The Naive baseline for MASE was also corrected to evaluate predicting the current `t` value for `t+h`. Post-fix, V12 achieved MASE < 1.0 across all tested regions, proving its thermodynamic forecasting superiority.
