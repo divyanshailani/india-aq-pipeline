@@ -9,7 +9,6 @@
 
 [📜 Read the full V12 Changelog & Architecture History here](CHANGELOG.md)
 
-![Dashboard Screenshot](https://raw.githubusercontent.com/divyanshailani/global-aq-intelligence-web/main/public/images/ui_dashboard.png)
 > End-to-end PM2.5 forecasting engine for 4 countries. Autonomous daily pipeline: fetch → engineer → predict → export → sync.
 
 **Stack:** Python · PostgreSQL · Parquet · XGBoost · Modal Serverless Grid · FastAPI
