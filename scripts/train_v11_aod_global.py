@@ -36,7 +36,7 @@ def load_v11_data(conn, country_code):
                df.om_temperature as future_temp,
                df.om_wind_speed as future_wind,
                df.om_precipitation as future_precip,
-               df.wind_direction,
+               0.0 as wind_direction,
                df.rolling_3day_precip,
                df.aod_volatility_index,
                s.latitude as station_lat,

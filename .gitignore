@@ -15,6 +15,7 @@ data/fire_counts_firms.csv
 data/fire_counts_au.csv
 data/fire_counts_gb.csv
 data/fire_counts_us.csv
+data/daily_features_full.parquet
 
 # Prediction CSVs (regenerable, kept as JSON in site_data/)
 data/predictions/

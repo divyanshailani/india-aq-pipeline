@@ -21,7 +21,7 @@
 
 ## What It Does
 
-Predicts PM2.5 air pollution for India, USA, UK, and Australia at 1-day, 7-day, 14-day, and 30-day horizons using a Gradient Boosting Regressor with a physics-based weather interpolation layer.
+Predicts PM2.5 air pollution for India, USA, UK, and Australia at 1-day, 7-day, 14-day, and 30-day horizons using native XGBoost with a Delta Target transformation, Zero Imputation, and no future weather injection.
 
 One command runs the full pipeline end-to-end:
 
@@ -307,5 +307,5 @@ For the full engineering history — data leakage discoveries, NASA POWER migrat
 ---
 
 ### License & Copyright
-© 2026 Divyansh Ailani. All Rights Reserved.
-This code is provided strictly for **portfolio viewing and evaluation purposes**. You may not copy, modify, distribute, or run this pipeline without explicit permission.
+© 2026 Divyansh Ailani. 
+This project is licensed under the MIT License. You are free to clone, run, and modify this pipeline for evaluation or personal use. Note that production database credentials and live cloud environments are excluded and kept private.
