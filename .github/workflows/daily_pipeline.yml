@@ -89,7 +89,7 @@ jobs:
       - name: 🧹 Step 1b - Run Daily ETL Pipeline
         run: |
           echo "Starting Cleaning, Feature Engineering, and Weather Backfill..."
-          python scripts/run_daily_etl.py
+          python -u scripts/run_daily_etl.py
 
       - name: 🧠 Step 2 - Run 30-Day V12 ONNX Predictions & Deploy
         env:
