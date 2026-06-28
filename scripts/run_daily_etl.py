@@ -22,7 +22,6 @@ import os
 import argparse
 import time
 import psycopg2
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add project root to path so we can import src/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -114,10 +113,10 @@ def main():
         )
         print()
 
-    # ── Step 3: Concurrent Weather & AOD Enrichment ──
+    # ── Step 3: Sequential Weather & AOD Enrichment (Batch DB Updates) ──
     if not args.clean_only:
         print("=" * 50)
-        print("🌍 Phase 3: Weather & AOD Enrichment (Concurrent)")
+        print("🌍 Phase 3: Weather & AOD Enrichment (Batch Updates)")
         print("=" * 50)
 
         from src.api_fallback_manager import ApiFallbackManager
@@ -163,51 +162,42 @@ def main():
         if not missing_rows:
             print("  ✓ All daily_features have complete weather & AOD context.")
         else:
-            print(f"  Fetching Weather & AOD for {len(missing_rows)} rows (concurrent)...")
+            print(f"  Fetching Weather & AOD for {len(missing_rows)} rows...")
 
-            # ── Concurrent API fetching with ThreadPoolExecutor ──
-            def fetch_single(row_data):
-                """Fetch weather + AOD for a single station/date pair."""
-                sid, dt, lat, lon = row_data
-                target_date_str = dt.strftime("%Y-%m-%d")
-                w_data = fetch_weather_for_date(fallback_manager, lat, lon, target_date_str)
-                aod_data = fetch_aod_for_date(fallback_manager, lat, lon, target_date_str)
-                return (
-                    w_data["om_temperature"],
-                    w_data["om_wind_speed"],
-                    w_data["om_precipitation"],
-                    aod_data["om_aerosol_optical_depth"],
-                    sid,
-                    dt
-                )
-
+            # ── Sequential API fetching (Open-Meteo free tier rate-limits concurrent) ──
             successful_updates = []
-            failed_rows = []
+            failed_count = 0
 
-            # Use 5 concurrent workers (gentle on Open-Meteo rate limits)
-            max_workers = min(5, len(missing_rows))
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_row = {
-                    executor.submit(fetch_single, row): row
-                    for row in missing_rows
-                }
+            for i, (sid, dt, lat, lon) in enumerate(missing_rows):
+                target_date_str = dt.strftime("%Y-%m-%d")
+                try:
+                    w_data = fetch_weather_for_date(fallback_manager, lat, lon, target_date_str)
+                    aod_data = fetch_aod_for_date(fallback_manager, lat, lon, target_date_str)
+                    successful_updates.append((
+                        w_data["om_temperature"],
+                        w_data["om_wind_speed"],
+                        w_data["om_precipitation"],
+                        aod_data["om_aerosol_optical_depth"],
+                        sid,
+                        dt
+                    ))
+                except Exception as e:
+                    # DON'T delete the row — XGBoost hist handles NaN natively.
+                    # Missing weather just stays NULL, model still predicts.
+                    failed_count += 1
+                    if failed_count <= 5:  # Only print first 5 errors
+                        print(f"  ⚠️ Skipped: Station {sid} on {target_date_str}: {e}")
 
-                for future in as_completed(future_to_row):
-                    row = future_to_row[future]
-                    sid, dt = row[0], row[1]
-                    try:
-                        result = future.result()
-                        successful_updates.append(result)
-                    except Exception as e:
-                        print(f"  ⚠️ Failed: Station {sid} on {dt}: {e}")
-                        failed_rows.append((sid, dt))
+                # Progress every 50 rows
+                if (i + 1) % 50 == 0:
+                    print(f"    [{i+1}/{len(missing_rows)}] fetched...")
 
-            # ── Batch UPDATE all successful results ──
+                time.sleep(0.15)  # Gentle on Open-Meteo free tier
+
+            # ── ONE Batch UPDATE for all successful results ──
             if successful_updates:
                 print(f"  💾 Batch updating {len(successful_updates)} weather rows...")
                 with conn.cursor() as cur:
-                    # Use a temp-table-free approach: batch execute individual UPDATEs
-                    # This is still much faster than commit-per-row
                     from psycopg2.extras import execute_batch
                     execute_batch(cur, """
                         UPDATE daily_features
@@ -220,17 +210,8 @@ def main():
                 conn.commit()
                 print(f"  ✅ Updated {len(successful_updates)} rows.")
 
-            # ── Batch DELETE failed rows (atomic abort) ──
-            if failed_rows:
-                print(f"  🚨 Rolling back {len(failed_rows)} failed rows...")
-                with conn.cursor() as cur:
-                    from psycopg2.extras import execute_batch
-                    execute_batch(cur, """
-                        DELETE FROM daily_features
-                        WHERE station_id = %s AND date = %s
-                    """, failed_rows, page_size=500)
-                conn.commit()
-                print(f"  Deleted {len(failed_rows)} corrupted rows.")
+            if failed_count > 0:
+                print(f"  ⚠️ {failed_count} rows left with NULL weather (XGBoost handles NaN natively).")
 
         print()
 
