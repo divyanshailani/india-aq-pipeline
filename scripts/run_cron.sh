@@ -18,18 +18,16 @@ echo "Running ONNX Inference..."
 python3 scripts/predict_v12_onnx.py
 
 # Publish to Next.js repo via SSH Deploy Key
-if [ ! -d "../global-aq-intelligence-web" ]; then
+if [ ! -d "global-aq-intelligence-web" ]; then
     echo "Cloning frontend repo..."
-    cd ..
     git clone git@github.com:divyanshailani/global-aq-intelligence-web.git
-    cd pow-eda-pipeline
 fi
 
 echo "Copying JSON to frontend repo..."
-cp site_data/*.json ../global-aq-intelligence-web/public/data/
-cp site_data/model_meta.json ../global-aq-intelligence-web/public/data/
+cp site_data/*.json global-aq-intelligence-web/public/data/
+cp site_data/model_meta.json global-aq-intelligence-web/public/data/
 
-cd ../global-aq-intelligence-web
+cd global-aq-intelligence-web
 git config user.name "Global AQI VM Bot"
 git config user.email "bot@globalaqi.com"
 git add public/data/
