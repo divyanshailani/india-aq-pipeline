@@ -1,19 +1,31 @@
 """
-IndiaAQ Intelligence — Feature Engineering Pipeline
-====================================================
+Global AQ Intelligence — Feature Engineering Pipeline (V2 Batch)
+================================================================
 Reads from clean_measurements, engineers features,
 writes to daily_features.
 
+V2 (2026-06-28): Eliminated sequential station-by-station DB loops.
+    - ONE bulk SQL query to load all clean data (with lookback window)
+    - In-memory groupby for per-station feature computation (zero network)
+    - ONE bulk upsert via execute_values with page_size=5000
+    - Insert window: only upsert features for recent days to avoid
+      corrupting older features computed from fuller history
+    - Result: 3+ hours → ~60 seconds on remote GH Actions runner
+
 Features per station per day:
-    - Time:    month, day_of_week, is_weekend, day_of_year
-    - Lag:     lag_1, lag_2, lag_3, lag_7
-    - Rolling: roll_3_mean, roll_7_mean, roll_3_std
-    - Cross:   temperature, humidity, wind_speed, no2, co, o3, so2
+    - Time:     month, day_of_week, is_weekend, day_of_year
+    - Lag:      lag_1, lag_2, lag_3, lag_7, lag_14, lag_21, lag_30
+    - Rolling:  roll_3_mean, roll_7_mean, roll_3_std, roll_14_mean, roll_30_mean, roll_14_std
+    - Momentum: pm25_delta_1, pm25_delta_7
+    - Cross:    temperature, humidity, wind_speed, no2, co, o3, so2
 """
 
 import pandas as pd
+import numpy as np
 import psycopg2
 from psycopg2.extras import execute_values
+import warnings
+from datetime import datetime, timedelta
 
 
 # ─── Step 1: Load Clean Data For Station ──────────────────
@@ -139,30 +151,36 @@ def extract_cross_features(daily):
     return result
 
 
-# ─── Full Feature Pipeline ────────────────────────────────
-def build_features_for_station(conn, station_id, target_param="pm25"):
+# ═══════════════════════════════════════════════════════════
+# V2 BATCH FEATURE BUILDER (works on pre-loaded data)
+# ═══════════════════════════════════════════════════════════
+
+def build_features_from_data(station_df, station_id, target_param="pm25"):
     """
-    Full feature pipeline for one station.
+    Build features for one station from PRE-LOADED data.
+    Zero database calls — pure in-memory pandas operations.
+
+    This is the V2 replacement for build_features_for_station().
+    Instead of loading data from the DB, it takes a pre-loaded DataFrame.
 
     Args:
-        conn: database connection
+        station_df: DataFrame with columns [parameter, value, datetime_local]
+                    (already filtered to one station)
         station_id: internal station ID
         target_param: which parameter to predict ('pm25' or 'pm10')
 
     Returns:
         DataFrame with features, or None if insufficient data
     """
-    # Load clean data
-    df = load_station_clean_data(conn, station_id)
-    if df.empty:
+    if station_df.empty:
         return None
 
     # Need at least the target parameter
-    if target_param not in df["parameter"].values:
+    if target_param not in station_df["parameter"].values:
         return None
 
     # Pivot to daily wide format
-    daily = make_daily_wide(df)
+    daily = make_daily_wide(station_df)
 
     if target_param not in daily.columns:
         return None
@@ -226,9 +244,56 @@ def build_features_for_station(conn, station_id, target_param="pm25"):
     return features
 
 
-# ─── Database Write ───────────────────────────────────────
-def insert_features(conn, features_df):
-    """Insert feature rows into daily_features table."""
+# ═══════════════════════════════════════════════════════════
+# V2 BATCH DATABASE OPERATIONS
+# ═══════════════════════════════════════════════════════════
+
+def load_bulk_clean_data(conn, station_ids=None, lookback_days=90):
+    """
+    Load clean measurements for ALL target stations in ONE query.
+
+    Uses lookback_days to limit data while ensuring enough history
+    for lag/rolling features (max lag = 30 days, max rolling = 30 days,
+    so 90 days provides ample buffer).
+
+    Args:
+        conn: psycopg2 connection
+        station_ids: list of station IDs (None = all)
+        lookback_days: load data from last N days (default 90)
+
+    Returns:
+        DataFrame with clean measurements
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', UserWarning)
+        if station_ids is None:
+            # Full rebuild: load everything
+            return pd.read_sql(
+                "SELECT station_id, parameter, value, datetime_local "
+                "FROM clean_measurements WHERE is_valid = true "
+                "ORDER BY station_id, datetime_local",
+                conn
+            )
+        else:
+            cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+            return pd.read_sql(
+                "SELECT station_id, parameter, value, datetime_local "
+                "FROM clean_measurements "
+                "WHERE station_id = ANY(%(ids)s) "
+                "AND is_valid = true "
+                "AND datetime_local >= %(cutoff)s "
+                "ORDER BY station_id, datetime_local",
+                conn,
+                params={"ids": list(station_ids), "cutoff": cutoff}
+            )
+
+
+def bulk_insert_features(conn, features_df, page_size=5000):
+    """
+    Bulk upsert ALL feature rows in one batch operation.
+    Uses execute_values with large page_size for maximum throughput.
+    ON CONFLICT DO UPDATE ensures idempotent upserts.
+    """
     if features_df.empty:
         return 0
 
@@ -261,27 +326,58 @@ def insert_features(conn, features_df):
             pm25_delta_7 = EXCLUDED.pm25_delta_7
     """
 
+    # Column order must match the VALUES %s in the SQL
+    insert_cols = [
+        'date', 'station_id', 'parameter', 'value',
+        'month', 'day_of_week', 'is_weekend', 'day_of_year',
+        'lag_1', 'lag_2', 'lag_3', 'lag_7',
+        'lag_14', 'lag_21', 'lag_30',
+        'roll_3_mean', 'roll_7_mean', 'roll_3_std',
+        'roll_14_mean', 'roll_30_mean', 'roll_14_std',
+        'pm25_delta_1', 'pm25_delta_7',
+    ]
+
     values = []
-    for _, row in features_df.iterrows():
-        values.append((
-            row["date"], row["station_id"], row["parameter"], row.get("value"),
-            row.get("month"), row.get("day_of_week"),
-            bool(row.get("is_weekend")) if pd.notna(row.get("is_weekend")) else None,
-            row.get("day_of_year"),
-            row.get("lag_1"), row.get("lag_2"), row.get("lag_3"), row.get("lag_7"),
-            row.get("lag_14"), row.get("lag_21"), row.get("lag_30"),
-            row.get("roll_3_mean"), row.get("roll_7_mean"), row.get("roll_3_std"),
-            row.get("roll_14_mean"), row.get("roll_30_mean"), row.get("roll_14_std"),
-            row.get("pm25_delta_1"), row.get("pm25_delta_7")
-        ))
+    for row in features_df[insert_cols].itertuples(index=False):
+        cleaned = []
+        for i, val in enumerate(row):
+            col_name = insert_cols[i]
+            if pd.isna(val):
+                cleaned.append(None)
+            elif col_name == 'is_weekend':
+                cleaned.append(bool(val))
+            else:
+                cleaned.append(val)
+        values.append(tuple(cleaned))
 
     with conn.cursor() as cur:
-        execute_values(cur, sql, values)
+        execute_values(cur, sql, values, page_size=page_size)
     conn.commit()
     return len(values)
 
 
-# ─── Main Entry Point ────────────────────────────────────
+# ═══════════════════════════════════════════════════════════
+# LEGACY OPERATIONS (backward compatibility)
+# ═══════════════════════════════════════════════════════════
+
+def build_features_for_station(conn, station_id, target_param="pm25"):
+    """
+    Legacy: Full feature pipeline for one station (loads from DB).
+    Kept for backward compatibility with scripts that call it directly.
+    For batch processing, use build_features_from_data() instead.
+    """
+    df = load_station_clean_data(conn, station_id)
+    if df.empty:
+        return None
+    return build_features_from_data(df, station_id, target_param)
+
+
+def insert_features(conn, features_df):
+    """Legacy: Insert feature rows (delegates to bulk_insert_features)."""
+    return bulk_insert_features(conn, features_df)
+
+
+# ─── Database Write ───────────────────────────────────────
 def ensure_v6_columns(conn):
     """
     Add v6 extended feature columns to daily_features if they don't exist.
@@ -302,14 +398,31 @@ def ensure_v6_columns(conn):
     conn.commit()
 
 
-def run_feature_pipeline(conn, station_ids=None, target_params=None):
+# ═══════════════════════════════════════════════════════════
+# MAIN ENTRY POINT
+# ═══════════════════════════════════════════════════════════
+
+def run_feature_pipeline(conn, station_ids=None, target_params=None,
+                         lookback_days=90, insert_recent_days=7):
     """
-    Run feature engineering on all (or specified) stations.
+    V2 Batch Feature Pipeline.
+
+    Architecture:
+        ONE bulk SQL query → in-memory groupby → ONE bulk upsert.
+        The in-memory groupby still iterates per-station for lag/rolling
+        computation, but ALL iterations are in-memory with ZERO network calls.
+
+    Insert Window Safety:
+        To avoid corrupting older features (which were computed from a fuller
+        history), only features for the last `insert_recent_days` are upserted.
+        The older lookback data is used purely for lag/rolling context.
 
     Args:
         conn: psycopg2 connection
-        station_ids: list of station IDs (None = all with clean data)
+        station_ids: list of station IDs (None = all)
         target_params: list of target parameters (default: ['pm25', 'pm10'])
+        lookback_days: how many days of clean data to load for context (default 90)
+        insert_recent_days: only upsert features within this window (default 7)
     """
     if target_params is None:
         target_params = ["pm25", "pm10"]
@@ -325,38 +438,77 @@ def run_feature_pipeline(conn, station_ids=None, target_params=None):
             """)
             station_ids = [row[0] for row in cur.fetchall()]
 
-    total_stations = len(station_ids)
-    total_features = 0
+    # ── 1. SINGLE BULK LOAD ──
+    print("  📦 Loading clean data (single bulk query)...")
+    all_data = load_bulk_clean_data(conn, station_ids, lookback_days=lookback_days)
+
+    if all_data.empty:
+        print("  ⚠️  No clean data found.")
+        return {"stations_with_features": 0, "total_features": 0}
+
+    total_stations = all_data['station_id'].nunique()
+    print(f"  Loaded {len(all_data):,} rows across {total_stations} stations")
+
+    # ── 2. IN-MEMORY FEATURE ENGINEERING (groupby, zero DB calls) ──
+    print("  🛠️  Computing features (in-memory groupby)...")
+    all_features = []
+    grouped = all_data.groupby('station_id')
     stations_with_data = 0
 
-    for i, sid in enumerate(station_ids):
-        station_total = 0
-
+    for i, (sid, group) in enumerate(grouped):
+        station_features_count = 0
         for param in target_params:
-            features = build_features_for_station(conn, sid, param)
+            features = build_features_from_data(group, sid, param)
             if features is not None and not features.empty:
-                inserted = insert_features(conn, features)
-                station_total += inserted
+                all_features.append(features)
+                station_features_count += len(features)
 
-        if station_total > 0:
+        if station_features_count > 0:
             stations_with_data += 1
-            total_features += station_total
-            print(
-                f"  [{i+1}/{total_stations}] Station {sid}: "
-                f"{station_total} feature rows"
-            )
+
+        # Progress every 500 stations
+        if (i + 1) % 500 == 0:
+            print(f"    [{i+1}/{total_stations}] stations processed...")
+
+    if not all_features:
+        print("  ⚠️  No features generated.")
+        return {"stations_with_features": 0, "total_features": 0}
+
+    combined = pd.concat(all_features, ignore_index=True)
+    print(f"  Generated {len(combined):,} feature rows from {stations_with_data} stations")
+
+    # ── 2b. INSERT WINDOW FILTER ──
+    # Only upsert features for the last N days to avoid corrupting
+    # older features that were computed from a fuller history.
+    if insert_recent_days and station_ids is not None:
+        cutoff_date = (datetime.utcnow() - timedelta(days=insert_recent_days)).date()
+        before_count = len(combined)
+        combined = combined[combined['date'] >= cutoff_date]
+        print(f"  🔒 Insert window: last {insert_recent_days} days → "
+              f"{before_count:,} → {len(combined):,} rows")
+
+    if combined.empty:
+        print("  ⚠️  No features within insert window.")
+        return {"stations_with_features": stations_with_data, "total_features": 0}
+
+    # ── 3. SINGLE BULK INSERT ──
+    print(f"  💾 Bulk upserting {len(combined):,} feature rows...")
+    inserted = bulk_insert_features(conn, combined)
 
     print(f"\n  ✅ Feature engineering complete:")
     print(f"     Stations with features: {stations_with_data}")
-    print(f"     Total feature rows: {total_features:,}")
+    print(f"     Total feature rows upserted: {len(combined):,}")
 
     return {
         "stations_with_features": stations_with_data,
-        "total_features": total_features,
+        "total_features": len(combined),
     }
 
 
-# ─── Advanced Weather Features ─────────────────────────────
+# ═══════════════════════════════════════════════════════════
+# ADVANCED WEATHER FEATURES (already efficient — SQL window)
+# ═══════════════════════════════════════════════════════════
+
 def ensure_advanced_weather_columns(conn):
     """Ensure the advanced engineered weather/AOD columns exist."""
     with conn.cursor() as cur:
@@ -375,23 +527,23 @@ def build_advanced_weather_features(conn):
     This prevents data leakage by explicitly skipping the current day.
     """
     ensure_advanced_weather_columns(conn)
-    
+
     # We update all rows that don't have rolling_3day_precip computed yet.
     # To compute rolling features safely without data leakage:
     # rolling_3day_precip: SUM of past 3 days (excluding today).
     # aod_volatility: STDDEV of past 7 days (excluding today).
-    
+
     sql = """
         WITH rolling_data AS (
             SELECT station_id, date, parameter,
                    SUM(om_precipitation) OVER (
-                       PARTITION BY station_id, parameter 
-                       ORDER BY date 
+                       PARTITION BY station_id, parameter
+                       ORDER BY date
                        ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING
                    ) as roll_3_precip,
                    STDDEV(om_aerosol_optical_depth) OVER (
-                       PARTITION BY station_id, parameter 
-                       ORDER BY date 
+                       PARTITION BY station_id, parameter
+                       ORDER BY date
                        ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
                    ) as aod_vol
             FROM daily_features
@@ -400,8 +552,8 @@ def build_advanced_weather_features(conn):
         SET rolling_3day_precip = COALESCE(rd.roll_3_precip, 0),
             aod_volatility_index = COALESCE(rd.aod_vol, 0)
         FROM rolling_data rd
-        WHERE df.station_id = rd.station_id 
-          AND df.date = rd.date 
+        WHERE df.station_id = rd.station_id
+          AND df.date = rd.date
           AND df.parameter = rd.parameter
           AND (df.rolling_3day_precip IS NULL OR df.aod_volatility_index IS NULL)
     """
