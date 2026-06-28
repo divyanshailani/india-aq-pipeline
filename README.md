@@ -242,7 +242,7 @@ The following issues were identified during a full Azure DB audit (2026-06-27) a
 | [#4](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/4) | Empty `model_registry` & `predictions` tables | ✅ Resolved | Tables deprecated & dropped |
 | [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | ✅ Resolved | 4-node backfill completed successfully |
 | [#6](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/6) | Multi-VM Parallel AOD Backfill (4-node mesh) | ✅ Resolved | 1.6M rows processed in < 3 hours |
-| [#8](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/8) | 14-Day Manual ETL Catchup After AOD Backfill | 🔧 In Progress | Running in tmux on main VM |
+| [#8](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/8) | 14-Day Manual ETL Catchup After AOD Backfill | ✅ Resolved | Data fully synchronized |
 | [Issue 25](./ISSUES.md#25-legacy-schema-collision-v11-blindness-resolved) | Legacy Schema Collision (V11 Blindness) | ✅ Resolved | V11 evaluation deprecated |
 | [Issue 26](./ISSUES.md#26-the-target-cascade-leakage-bug-in-v12-training-resolved) | Target Cascade Leakage Bug in V12 Training | ✅ Resolved | Deep isolated dataframe per horizon |
 | [Issue 27](./ISSUES.md#27-phase-shift-target-alignment-evaluation-bug-resolved) | Phase-Shift Evaluation Target Bug | ✅ Resolved | Target phase alignment corrected |
