@@ -11,7 +11,7 @@ import os
 import json
 import time
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 import numpy as np
 import onnxruntime as ort
@@ -195,7 +195,7 @@ def run_inference():
                 **COUNTRY_META[cc],
                 "fire_count": 0
             },
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "last_data_date": last_data_date_str,
             "forecast": forecast_records,
             "station_count": num_stations
@@ -209,7 +209,7 @@ def run_inference():
             
     # Metadata
     model_meta = {
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         "model_version": "v12_onnx_global",
         "countries": {cc: COUNTRY_META[cc] for cc in COUNTRIES}
     }
