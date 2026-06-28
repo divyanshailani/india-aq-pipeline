@@ -1,11 +1,11 @@
 # Global AQ Intelligence — ML Pipeline
 
 [![Live Deployment](https://img.shields.io/badge/Live_Deployment-global--aq--intelligence.vercel.app-10B981?style=for-the-badge&logo=vercel)](https://global-aq-intelligence.vercel.app)
-> **Currently running the V12 Challenger Pure Engine.**
+> **The V12 Challenger Engine is now the Official Production Engine.**
 
 [📜 Read the full V12 Changelog & Architecture History here](CHANGELOG.md)
 
-> End-to-end PM2.5 forecasting engine for 4 countries. Autonomous daily pipeline: fetch → engineer → predict → export → sync.
+> End-to-end PM2.5 forecasting engine for 4 countries. Autonomous daily pipeline: fetch → engineer → predict → sync.
 
 **Stack:** Python · PostgreSQL · Parquet · XGBoost · Modal Serverless Grid · FastAPI
 
@@ -25,7 +25,7 @@ One command runs the full pipeline end-to-end:
 python3 scripts/predict_pipeline.py
 ```
 
-This fetches live sensor data, generates 30-day forecasts per station, exports static JSON, and automatically syncs to the Next.js frontend.
+This fetches live sensor data, generates 30-day forecasts per station via Direct SQL Inference, exports static JSON, and automatically syncs to the Next.js frontend.
 
 ---
 
@@ -33,8 +33,8 @@ This fetches live sensor data, generates 30-day forecasts per station, exports s
 
 ```
 OpenAQ API ──┐
-NASA POWER ──┼──▶ PostgreSQL ──▶ Parquet ──▶ Modal Grid ──▶ V12 XGBoost ──▶ JSON Export ──▶ Next.js
-Open-Meteo ──┘                                                               (site_data/)    (auto-sync)
+NASA POWER ──┼──▶ PostgreSQL ──▶ V12 XGBoost (SQL Direct) ──▶ JSON Export ──▶ Next.js
+Open-Meteo ──┘                                                (site_data/)    (auto-sync)
 ```
 
 ### Model Architecture: V12 Challenger Pure Engine
@@ -238,8 +238,8 @@ The following issues were identified during a full Azure DB audit (2026-06-27) a
 |---|-------|--------|--------|
 | [#5](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/5) | Environment State Divergence — Local vs Azure DB | ✅ Resolved | Data sync fixed |
 | [#1](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/1) | 13 Legacy Columns at 95% NULL | ✅ Resolved | 11 columns dropped via CASCADE |
-| [#2](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/2) | 1,464 Phantom Stations (35%) with zero features | 🔍 Investigation | ETL coverage gap |
-| [#4](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/4) | Empty `model_registry` & `predictions` tables | 🔍 Investigation | Schema cleanup |
+| [#2](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/2) | 1,464 Phantom Stations (35%) with zero features | ✅ Resolved | Expected ETL behavior |
+| [#4](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/4) | Empty `model_registry` & `predictions` tables | ✅ Resolved | Tables deprecated & dropped |
 | [#3](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/3) | AOD Backfill: `om_aerosol_optical_depth` at 33% NULL | ✅ Resolved | 4-node backfill completed successfully |
 | [#6](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/6) | Multi-VM Parallel AOD Backfill (4-node mesh) | ✅ Resolved | 1.6M rows processed in < 3 hours |
 | [#8](https://github.com/divyanshailani/global-aq-intelligence-pipeline/issues/8) | 14-Day Manual ETL Catchup After AOD Backfill | 🔧 In Progress | Running in tmux on main VM |

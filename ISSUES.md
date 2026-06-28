@@ -261,7 +261,7 @@ Understood that the `0d gap` metric represents the "freshest available data poin
 
 ---
 
-## 21. The "Environment State Divergence" — Local DB vs Azure Cloud DB [RESOLVED 2026-06-27]
+## 21. Environment State Divergence — Local DB vs Azure Cloud DB (Issue #5) [RESOLVED]
 **Issue:**
 During the AOD backfill operation, a merge script (`/tmp/merge_aod.py`) was run on the local Mac Mini to copy AOD data from `satellite_aod_features` into `daily_features`. However, the `.env` file had no `POSTGRES_HOST` configured — so it defaulted to `localhost`. The script successfully updated **1,069,944 rows** in the local PostgreSQL database while the Azure Flexible PostgreSQL production database remained completely untouched with 100% NULL AOD values.
 
@@ -309,7 +309,7 @@ Cross-table consistency check (2026-06-27) revealed **1,464 out of 4,193 station
 
 ---
 
-## 24. Empty Operational Tables — model_registry & predictions [OPEN — Schema Cleanup]
+## 24. model_registry and predictions Tables Are Empty (Issue #4) [RESOLVED]
 **Issue:**
 Azure DB audit (2026-06-27) found two operational tables with **zero rows**: `model_registry` (13 cols) and `predictions` (12 cols). Additionally, 4 country-specific feature tables (`features_india`, `features_usa`, `features_uk`, `features_australia`) are completely empty at 0 bytes.
 
@@ -327,7 +327,7 @@ V11 (Champion) was originally trained on legacy local DB columns (`wind_directio
 **Resolution:** 
 Completely deprecated V11 evaluation on the new schema. V12 (Challenger) explicitly leverages the high-availability (99.5% fill rate) Open-Meteo (`om_`) features, ensuring robust inference without legacy schema collision.
 
-## 26. The Target Cascade Leakage Bug in V12 Training [RESOLVED]
+## 26. [CRITICAL] Target Cascade Leakage & Phase-Shift Evaluation Bug in V12 Pipeline [RESOLVED]
 **Issue:** 
 A catastrophic memory mutation bug in the V12 tuning loop. The script mutated the in-memory dataframe during the horizon iteration (h=1, 7, 14, 30). The `target_1d` column generated in the first loop remained as a "ghost feature" for the `h=7` model. Consequently, `h=14` leaked both `target_1d` and `target_7d`. 
 This leakage caused models to cheat by looking at future PM2.5 data, resulting in impossibly low MAE scores for higher horizons (e.g., GB 14d MAE was 0.67, lower than 1d MAE of 0.94).

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [12.1.0] - V12 Official Launch & Pipeline Refactor (2026-06-28)
+
+### 🚀 Production V12 Launch
+- **V12 Engine Promoted to Production**: The V12 Challenger Engine is now the official production forecasting model, permanently replacing the legacy V11 cross-validated models. 
+- All downstream dependencies now point strictly to the V12 ONNX artifacts generated from the Modal distributed hyperparameter grid.
+
+### ⚙️ Inference Pipeline Overhaul
+- **Parquet-to-SQL Pivot**: Completely ripped out the 98MB Parquet data extraction step in the daily GitHub Actions pipeline.
+- **Direct SQL Queries**: `predict_v12_onnx.py` now leverages `psycopg2` to query Azure PostgreSQL directly using `DISTINCT ON (station_id)`, pulling only the latest 1,551 rows required for inference.
+- **Extreme Speedup**: Inference data extraction speed reduced from ~5 minutes to **~0.5 seconds**.
+- **Lean Dependencies**: Removed `pyarrow` requirement from the prediction environment, massively reducing compute overhead on standard GitHub Action runners.
+
+### 🐛 Bug Fixes
+- **Naive Timestamp Bug**: Fixed a critical frontend rendering issue where Vercel's UTC pipeline timestamp was displayed as local time in the user's browser. Resolved by appending explicit timezone identifiers (`datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')`) to JSON payloads.
+- **React Hydration Timezones**: Updated Next.js `Hero.tsx` component with `useEffect` to safely convert UTC ISO strings into accurate localized client times (e.g., IST) post-hydration.
+- **Issue Resolutions**: Closed #9 (Target Cascade Leakage), #5 (Environment Divergence), and #2 (Zero Row Stations).
+
 ## [12.0.0] - V12 Challenger Pure Engine & Parquet Migration
 
 ### 🚀 The Great Data Audit & Modal Serverless Grid
